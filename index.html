@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#12160e" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="description" content="Game tank perang 2D melawan komputer. Pilih tank dari berbagai negara di dunia." />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="apple-touch-icon" href="/icon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Russo+One&display=swap" rel="stylesheet" />
+    <title>Tank Strike</title>
+  </head>
+  <body>
+    <canvas id="game"></canvas>
+    <canvas id="overlay"></canvas>
+    <div id="ui"></div>
+    <div id="rotate-hint">
+      <div class="rotate-icon"></div>
+      <p>Putar HP ke posisi <b>landscape</b> untuk bermain</p>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

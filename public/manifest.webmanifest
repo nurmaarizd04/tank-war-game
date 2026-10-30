@@ -1,0 +1,11 @@
+{
+  "name": "Tank Strike — Pertempuran Tank Dunia",
+  "short_name": "Tank Strike",
+  "description": "Game tank perang 2D melawan komputer dengan tank dari berbagai negara.",
+  "start_url": "/",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#12160e",
+  "theme_color": "#12160e",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

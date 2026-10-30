@@ -1,0 +1,515 @@
+/* ---------- Menu: kanan & tombol suara ---------- */
+
+.menu-right {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: flex-end;
+}
+
+.toggles {
+  display: flex;
+  gap: 8px;
+}
+
+.icon-btn.off {
+  color: var(--muted);
+  opacity: 0.7;
+}
+
+.btn-small {
+  padding: 7px 14px;
+  font-size: 12px;
+}
+
+/* ---------- Main bersama: buat / gabung room ---------- */
+
+.online-dialog {
+  text-align: left;
+  width: min(640px, 96vw);
+}
+
+.dialog-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.dialog-head h2 {
+  margin: 0;
+  font-size: clamp(20px, 4.5vh, 30px);
+}
+
+.online-dialog .sub {
+  margin: 6px 0 12px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+input {
+  font: inherit;
+  font-size: 18px;
+  color: var(--text);
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  outline: none;
+  user-select: text;
+  -webkit-user-select: text;
+  touch-action: manipulation;
+}
+
+input:focus {
+  border-color: var(--accent);
+}
+
+.online-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.online-grid section {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.online-grid h4 {
+  margin: 0;
+  font-family: var(--font-title);
+  font-weight: 400;
+  color: var(--accent);
+}
+
+.online-grid p {
+  margin: 0;
+  font-size: 14px;
+  color: #cfd3c3;
+  flex: 1;
+}
+
+.join-row {
+  display: flex;
+  gap: 8px;
+}
+
+.join-row input {
+  flex: 1;
+  min-width: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.3em;
+  font-family: var(--font-title);
+  text-align: center;
+}
+
+.status {
+  min-height: 1.3em;
+  margin: 10px 0 0;
+  font-size: 14px;
+  color: var(--accent);
+}
+
+.status.error {
+  color: #ff8a80;
+}
+
+/* ---------- Lobi ---------- */
+
+.room-code {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 4px 6px 4px 12px;
+}
+
+.room-code span {
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  color: var(--muted);
+}
+
+.room-code b {
+  font-family: var(--font-title);
+  font-weight: 400;
+  font-size: clamp(20px, 4.5vh, 30px);
+  letter-spacing: 0.18em;
+  color: var(--accent);
+}
+
+.room-code .icon-btn {
+  width: 36px;
+  height: 36px;
+}
+
+.lobby {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr minmax(260px, 40%);
+  gap: 12px;
+}
+
+.lobby-players,
+.lobby-side {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 10px 12px;
+  min-height: 0;
+  overflow-y: auto;
+  touch-action: pan-y;
+}
+
+.lobby-side {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.lobby-count {
+  font-size: 13px;
+  color: var(--muted);
+  letter-spacing: 0.1em;
+  margin-bottom: 6px;
+}
+
+#lobby-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+#lobby-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+#lobby-list li.me {
+  background: rgba(245, 165, 36, 0.12);
+  outline: 1px solid rgba(245, 165, 36, 0.4);
+}
+
+#lobby-list li div {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+  flex: 1;
+  min-width: 0;
+}
+
+#lobby-list li b {
+  font-size: 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#lobby-list li span {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.badge {
+  font-style: normal;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.badge.host {
+  background: var(--accent);
+  color: #1d1406;
+}
+
+.lobby-mytank {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.lobby-mytank canvas {
+  width: 110px;
+  height: 70px;
+  flex: none;
+}
+
+.lobby-mytank .label {
+  font-size: 12px;
+  color: var(--muted);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+
+.lobby-mytank .name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-title);
+  margin: 2px 0 6px;
+}
+
+.lobby-settings {
+  display: grid;
+  gap: 8px;
+}
+
+.lobby-settings.readonly {
+  pointer-events: none;
+  opacity: 0.75;
+}
+
+.setting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.segmented {
+  display: flex;
+  gap: 4px;
+  background: rgba(0, 0, 0, 0.35);
+  padding: 3px;
+  border-radius: 9px;
+}
+
+.segmented button {
+  padding: 5px 10px;
+  border-radius: 6px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.segmented button.active {
+  background: var(--accent);
+  color: #1d1406;
+}
+
+#btn-start:disabled {
+  opacity: 0.45;
+  filter: grayscale(0.6);
+}
+
+/* ---------- HUD versus ---------- */
+
+.hud-board {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: none;
+  gap: 3px;
+}
+
+#hud.versus .hud-board {
+  display: grid;
+}
+
+.hud-board li {
+  display: grid;
+  grid-template-columns: 18px 1fr auto;
+  gap: 6px;
+  align-items: center;
+  font-size: 13px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.45);
+  text-shadow: 0 1px 2px #000;
+}
+
+.hud-board li.me {
+  background: rgba(245, 165, 36, 0.35);
+}
+
+.hud-board b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hud-board em {
+  font-style: normal;
+  font-family: var(--font-title);
+  color: var(--accent);
+}
+
+.hud-board li.me em {
+  color: #fff;
+}
+
+.killfeed {
+  position: absolute;
+  right: max(12px, var(--safe-r));
+  top: calc(74px + clamp(110px, 15vw, 180px) * 0.6667);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.killfeed li {
+  font-size: 13px;
+  padding: 3px 10px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.55);
+  animation: feed-in 0.3s ease;
+}
+
+.killfeed b.me {
+  color: var(--accent);
+}
+
+.killfeed span {
+  margin: 0 4px;
+  color: #ffb3b3;
+}
+
+@keyframes feed-in {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+}
+
+.respawn {
+  position: absolute;
+  left: 50%;
+  top: 58%;
+  transform: translate(-50%, -50%);
+  font-size: clamp(18px, 4vh, 26px);
+  padding: 10px 22px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.55);
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.respawn.show {
+  opacity: 1;
+}
+
+.respawn b {
+  font-family: var(--font-title);
+  color: var(--accent);
+  font-size: 1.3em;
+}
+
+/* ---------- Hasil pertandingan ---------- */
+
+.results-dialog {
+  width: min(560px, 96vw);
+}
+
+.scoreboard {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 15px;
+}
+
+.scoreboard th {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  text-align: left;
+  padding: 4px 8px;
+}
+
+.scoreboard td {
+  padding: 6px 8px;
+  border-top: 1px solid var(--line);
+  text-align: left;
+}
+
+.scoreboard td:nth-child(3),
+.scoreboard td:nth-child(4),
+.scoreboard th:nth-child(3),
+.scoreboard th:nth-child(4) {
+  text-align: center;
+}
+
+.scoreboard td:nth-child(3) {
+  font-family: var(--font-title);
+  color: var(--accent);
+  font-size: 18px;
+}
+
+.scoreboard tr.me td {
+  background: rgba(245, 165, 36, 0.1);
+}
+
+.scoreboard .who {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.scoreboard .who span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+#results-actions .status {
+  width: 100%;
+  margin: 0;
+}
+
+@media (max-height: 430px) {
+  .online-grid section {
+    padding: 8px 10px;
+  }
+
+  .online-grid p {
+    font-size: 12px;
+  }
+
+  input {
+    font-size: 16px;
+    padding: 7px 10px;
+  }
+
+  .lobby-mytank canvas {
+    width: 84px;
+    height: 54px;
+  }
+
+  .scoreboard td {
+    padding: 3px 8px;
+  }
+}
+
+@media (max-width: 700px) and (orientation: portrait) {
+  .online-grid,
+  .lobby {
+    grid-template-columns: 1fr;
+  }
+}

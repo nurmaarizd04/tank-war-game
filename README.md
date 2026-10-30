@@ -1,0 +1,84 @@
+# 🪖 Tank Strike — Pertempuran Tank Dunia 3D
+
+Game tank perang **3D** yang dimainkan di browser HP maupun laptop: **versus online bersama teman**
+(semua lawan semua, hingga 10 pemain) atau latihan melawan komputer.
+Dibuat dengan **TypeScript + Three.js + PeerJS + Vite**. Semua model tank, peta, efek, suara,
+dan **musik latar orisinal** dibuat lewat kode — tanpa file gambar/audio berhak cipta.
+
+## ✨ Fitur
+
+- **Grafis 3D**: tank 3D (rantai bergerak, roda, turret, laras dengan hentakan), gedung beratap,
+  pohon, batu, peti & tong yang bisa dihancurkan, bayangan, kilatan cahaya ledakan, asap & api 3D.
+- **16 tank dari 14 negara** — 13 modern (Abrams, Leopard 2A7, T-90M, Challenger 2, Leclerc,
+  Merkava Mk4, Type 99A, K2 Black Panther, Type 10, C1 Ariete, Arjun, Altay, **Pindad Harimau**)
+  dan 3 legenda Perang Dunia II (Tiger I, T-34-85, M4 Sherman), masing-masing dengan statistik berbeda.
+- **Main bersama teman lewat internet** — buat room, bagikan kode 5 huruf / link, hingga 10 pemain
+  saling lawan. Atur target hancurkan (5–20) & durasi (3–8 menit). Tank yang hancur muncul kembali
+  dengan perisai sesaat. Ada papan peringkat, kill feed, dan papan skor akhir.
+- **Latihan vs komputer**: AI yang mengejar, memutar, menghindari rintangan & membidik dengan prediksi;
+  3 tingkat kesulitan dan gelombang musuh yang makin kuat.
+- **Musik latar orisinal** (versi menu & pertempuran) + efek suara; masing-masing bisa dimatikan.
+
+## 🎮 Kontrol
+
+| | HP | Laptop |
+| --- | --- | --- |
+| Bergerak | Geser sisi **kiri** layar | **WASD** / panah |
+| Membidik | Geser sisi **kanan** layar (menembak otomatis) | **Mouse** |
+| Menembak | **Ketuk** sisi kanan (bidik otomatis ke musuh terdekat) | **Klik** / **Spasi** |
+| Menu | Tombol ⏸ | **Esc** |
+
+## 🚀 Menjalankan di komputer
+
+```bash
+npm install
+npm run dev
+```
+
+## 🌐 Supaya teman-teman bisa ikut main (wajib di-online-kan)
+
+Teman di tempat lain butuh **alamat game yang bisa dibuka dari internet**. Cara termudah (gratis):
+
+1. Upload folder proyek ini ke GitHub.
+2. Buka [vercel.com/new](https://vercel.com/new), impor repo tersebut — Vercel otomatis mendeteksi Vite
+   (perintah build `npm run build`, folder `dist`).
+3. Bagikan alamat yang didapat (misal `https://tank-strike.vercel.app`) ke teman.
+4. Satu orang pilih **Main Bersama Teman → Buat Room**, lalu tekan tombol **bagikan** di lobi
+   untuk mengirim link undangan (langsung berisi kode room) lewat WhatsApp.
+
+Di HP, buka alamat tersebut lalu pilih **Tambahkan ke layar utama** agar terbuka layar penuh seperti aplikasi.
+
+> Tes cepat di Wi-Fi yang sama tanpa deploy: jalankan `npm run dev -- --host`, lalu buka alamat
+> **Network** yang muncul dari HP lain.
+
+### Cara kerja online
+
+Koneksi antar pemain memakai **WebRTC peer-to-peer** (lewat [PeerJS](https://peerjs.com)), jadi tidak
+perlu server sendiri. Pembuat room (host) menjalankan simulasi pertempuran; pemain lain mengirim input
+dan menerima keadaan permainan 20× per detik. Karena itu:
+
+- Jika **host keluar**, room ditutup untuk semua pemain.
+- Host sebaiknya memakai HP/laptop dengan sinyal paling stabil.
+- Di sebagian kecil jaringan yang sangat ketat (misal Wi-Fi kantor tertentu), koneksi langsung bisa
+  gagal — coba pakai data seluler.
+
+## 🗂️ Struktur
+
+```
+src/
+  data/tanks.ts      ← daftar tank & statistiknya (tambah tank baru di sini)
+  data/flags.ts      ← bendera negara (SVG)
+  game/game.ts       ← simulasi: mode demo / latihan / host / pemain online, peluru, kerusakan, skor
+  game/protocol.ts   ← format data online (snapshot & event)
+  game/tank.ts       ← fisika tank
+  game/ai.ts         ← AI musuh & tingkat kesulitan
+  game/world.ts      ← peta (dibuat dari seed yang sama untuk semua pemain), tabrakan
+  game/music.ts      ← musik latar orisinal (sequencer Web Audio)
+  game/audio.ts      ← efek suara sintetis
+  game/input.ts      ← joystick sentuh, keyboard, mouse
+  net/session.ts     ← room online (PeerJS): buat, gabung, kirim input & snapshot
+  render/models.ts   ← model 3D tank & tekstur lingkungan
+  render/renderer.ts ← adegan 3D, kamera, partikel, minimap & label pemain
+  render/preview.ts  ← pratinjau tank 3D di garasi
+  ui/app.ts          ← menu, garasi, lobi, HUD, hasil pertandingan
+```
