@@ -48,6 +48,8 @@ export interface TankModel {
   shellSpeed: number;
   range: number;
   look: TankLook;
+  /** Tank rahasia: tersembunyi sampai dibuka dengan kode, tidak dipakai lawan komputer */
+  secret?: boolean;
 }
 
 export const TANKS: TankModel[] = [
@@ -537,9 +539,56 @@ export const TANKS: TankModel[] = [
       rivets: true,
     },
   },
+  {
+    id: "garuda-x1",
+    name: "Garuda X-1",
+    country: "Indonesia",
+    flag: "id",
+    era: "modern",
+    year: 2026,
+    description:
+      "Prototipe rahasia berlapis emas. Meriam railgun 150 mm menghancurkan hampir semua tank dalam dua tembakan, armor reaktif berlapis, dan tetap lincah.",
+    hp: 420,
+    armor: 0.45,
+    speed: 128,
+    hullTurn: 2.4,
+    turretTurn: 2.8,
+    damage: 180,
+    reload: 1.3,
+    shellSpeed: 1350,
+    range: 860,
+    secret: true,
+    look: {
+      length: 80,
+      width: 44,
+      colors: ["#1d1d22", "#d4a93a", "#2c2c33"],
+      camo: "digital",
+      turret: "wedge",
+      turretScale: 1.22,
+      turretOffset: 0,
+      barrel: 66,
+      barrelWidth: 5.2,
+      muzzleBrake: true,
+      era: true,
+    },
+  },
 ];
 
+/** Tank yang tersedia untuk semua orang & lawan komputer (tanpa tank rahasia) */
+export const STANDARD_TANKS = TANKS.filter((t) => !t.secret);
+
 export const tankById = (id: string) => TANKS.find((t) => t.id === id) ?? TANKS[0];
+
+/** Hash FNV-1a: kode rahasia tidak ditulis apa adanya di kode sumber */
+function hashCode(text: string) {
+  let h = 0x811c9dc5;
+  for (const c of text) h = Math.imul(h ^ c.charCodeAt(0), 0x01000193) >>> 0;
+  return h;
+}
+
+const SECRET_CODE_HASH = 796724727;
+
+export const isSecretCode = (code: string) => hashCode(code.trim().toLowerCase()) === SECRET_CODE_HASH;
 
 /** Nilai 0–1 untuk bar statistik di garasi */
 export function tankRatings(t: TankModel) {

@@ -155,7 +155,15 @@ export function buildTank(model: TankModel): TankRig {
   const hullSide = new THREE.MeshStandardMaterial({ color: side, roughness: 0.8, metalness: 0.25 });
   const turretTop = new THREE.MeshStandardMaterial({ map: parts.turretTop, roughness: 0.7, metalness: 0.3 });
   const turretSide = new THREE.MeshStandardMaterial({ color: base.clone().multiplyScalar(0.75), roughness: 0.75, metalness: 0.3 });
-  const steel = new THREE.MeshStandardMaterial({ color: base.clone().multiplyScalar(0.55), roughness: 0.55, metalness: 0.5 });
+  // Tank rahasia: meriam, roda & armor reaktif berlapis emas mengilap.
+  // userData.glow = pendar dasar, ditambahkan renderer di atas kilatan saat terkena tembakan.
+  const steel = model.secret
+    ? new THREE.MeshStandardMaterial({ color: colors[1], roughness: 0.28, metalness: 0.9 })
+    : new THREE.MeshStandardMaterial({ color: base.clone().multiplyScalar(0.55), roughness: 0.55, metalness: 0.5 });
+  if (model.secret) {
+    steel.userData.glow = new THREE.Color(colors[1]).multiplyScalar(0.14);
+    steel.emissive.copy(steel.userData.glow);
+  }
   const rubber = new THREE.MeshStandardMaterial({ color: 0x2b2a26, roughness: 0.9, metalness: 0.1 });
   const paint = [hullTop, hullSide, turretTop, turretSide, steel];
 

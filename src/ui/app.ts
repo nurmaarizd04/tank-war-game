@@ -1,5 +1,5 @@
 import { flagSvg } from "../data/flags";
-import { TANKS, tankById, tankRatings, type TankModel } from "../data/tanks";
+import { STANDARD_TANKS, TANKS, isSecretCode, tankById, tankRatings, type TankModel } from "../data/tanks";
 import { DIFFICULTIES, type Difficulty, type DifficultyId } from "../game/ai";
 import { sound } from "../game/audio";
 import type { Game, GameResult, HudState } from "../game/game";
@@ -9,7 +9,19 @@ import { drawTankPreview } from "../game/sprites";
 import { ClientSession, HostSession, MAX_PLAYERS, normalizeCode, type LobbyPlayer } from "../net/session";
 import { TankPreview } from "../render/preview";
 
-type ScreenId = "menu" | "garage" | "difficulty" | "help" | "online" | "lobby" | "pause" | "over" | "results" | "alert" | "none";
+type ScreenId =
+  | "menu"
+  | "garage"
+  | "secret"
+  | "difficulty"
+  | "help"
+  | "online"
+  | "lobby"
+  | "pause"
+  | "over"
+  | "results"
+  | "alert"
+  | "none";
 type Filter = "all" | "modern" | "ww2";
 type GarageReturn = "menu" | "solo" | "lobby";
 
@@ -21,10 +33,17 @@ const ICONS = {
   musicOn: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 17.5V6l11-2v11.5"/><circle cx="6.5" cy="17.5" r="2.8"/><circle cx="17.5" cy="15.5" r="2.8"/><path d="M9 6l11-2v3L9 9z"/></svg>`,
   musicOff: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 17.5V6l11-2v11.5" /><circle cx="6.5" cy="17.5" r="2.5" fill="currentColor"/><circle cx="17.5" cy="15.5" r="2.5" fill="currentColor"/><path d="M3 3l18 18" stroke-width="2.4"/></svg>`,
   copy: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>`,
+  key: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="M10.8 12.2L20 3M16 7l3 3M14 9l2 2"/></svg>`,
   share: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>`,
 };
 
-const STORAGE = { tank: "tank-selected", difficulty: "tank-difficulty", best: "tank-best-score", name: "tank-name" };
+const STORAGE = {
+  tank: "tank-selected",
+  difficulty: "tank-difficulty",
+  best: "tank-best-score",
+  name: "tank-name",
+  secret: "tank-secret-unlocked",
+};
 const KILL_OPTIONS = [5, 10, 15, 20];
 const TIME_OPTIONS = [180, 300, 480];
 
@@ -83,11 +102,14 @@ export class App {
   private host: HostSession | null = null;
   private client: ClientSession | null = null;
   private preview: TankPreview | null = null;
+  /** Tank rahasia sudah dibuka dengan kode (tersimpan di perangkat ini) */
+  private secretUnlocked = load(STORAGE.secret) === "1";
 
   constructor(root: HTMLElement, game: Game) {
     this.root = root;
     this.game = game;
     this.tank = tankById(load(STORAGE.tank) ?? "harimau");
+    if (this.tank.secret && !this.secretUnlocked) this.tank = tankById("harimau");
     this.difficulty = DIFFICULTIES.find((d) => d.id === (load(STORAGE.difficulty) as DifficultyId)) ?? DIFFICULTIES[1];
     root.innerHTML = this.markup();
     this.bind();
@@ -119,11 +141,6 @@ export class App {
   // ---------------- Markup ----------------
 
   private markup() {
-    const counts = {
-      all: TANKS.length,
-      modern: TANKS.filter((t) => t.era === "modern").length,
-      ww2: TANKS.filter((t) => t.era === "ww2").length,
-    };
     return `
     <section class="screen backdrop" id="screen-menu">
       <div class="menu-left">
@@ -137,7 +154,7 @@ export class App {
         </div>
         <div class="menu-stats">
           <span>Skor latihan terbaik: <b id="menu-best">0</b></span>
-          <span>${TANKS.length} tank · ${new Set(TANKS.map((t) => t.country)).size} negara</span>
+          <span>${STANDARD_TANKS.length} tank · ${new Set(STANDARD_TANKS.map((t) => t.country)).size} negara</span>
         </div>
       </div>
       <div class="menu-right">
@@ -228,10 +245,11 @@ export class App {
         <button class="icon-btn" data-action="garage-back" aria-label="Kembali">${ICONS.back}</button>
         <h2>Pilih Tank</h2>
         <div class="tabs">
-          <button class="tab active" data-filter="all">Semua (${counts.all})</button>
-          <button class="tab" data-filter="modern">Modern (${counts.modern})</button>
-          <button class="tab" data-filter="ww2">PD II (${counts.ww2})</button>
+          <button class="tab active" data-filter="all"></button>
+          <button class="tab" data-filter="modern"></button>
+          <button class="tab" data-filter="ww2"></button>
         </div>
+        <button class="icon-btn secret-btn" data-action="secret" aria-label="Kode rahasia">${ICONS.key}</button>
       </div>
       <div class="garage">
         <div class="tank-grid" id="tank-grid"></div>
@@ -243,6 +261,21 @@ export class App {
           <div class="stats" id="detail-stats"></div>
           <button class="btn btn-primary" data-action="choose">Pilih Tank Ini</button>
         </aside>
+      </div>
+    </section>
+
+    <section class="screen backdrop center-screen" id="screen-secret">
+      <div class="dialog secret-dialog">
+        <div class="dialog-head">
+          <button class="icon-btn" data-action="secret-back" aria-label="Kembali">${ICONS.back}</button>
+          <h2>Kode Rahasia</h2>
+        </div>
+        <p class="sub">Punya kode? Masukkan untuk membuka tank tersembunyi.</p>
+        <div class="join-row">
+          <input id="secret-code" type="password" maxlength="24" placeholder="Kode" autocomplete="off" spellcheck="false" />
+          <button class="btn btn-primary" data-action="unlock">Buka</button>
+        </div>
+        <p class="status" id="secret-status"></p>
       </div>
     </section>
 
@@ -405,6 +438,9 @@ export class App {
     this.$<HTMLInputElement>("#room-code").addEventListener("keydown", (e) => {
       if (e.key === "Enter") this.joinRoom();
     });
+    this.$<HTMLInputElement>("#secret-code").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") this.tryUnlock();
+    });
     // Kolom teks butuh sentuhan normal (body memakai touch-action: none)
     for (const input of this.root.querySelectorAll("input")) input.addEventListener("pointerdown", (e) => e.stopPropagation());
 
@@ -437,6 +473,15 @@ export class App {
         break;
       case "garage-back":
         this.show(this.garageReturn === "lobby" ? "lobby" : "menu");
+        break;
+      case "secret":
+        this.openSecret();
+        break;
+      case "secret-back":
+        this.show("garage");
+        break;
+      case "unlock":
+        this.tryUnlock();
         break;
       case "help":
         this.show("help");
@@ -527,6 +572,37 @@ export class App {
     this.garageReturn = returnTo;
     (this.$("[data-action=choose]") as HTMLElement).textContent = returnTo === "solo" ? "Pilih & Lanjut" : "Pilih Tank Ini";
     this.show("garage");
+  }
+
+  private openSecret() {
+    const input = this.$<HTMLInputElement>("#secret-code");
+    const status = this.$("#secret-status");
+    input.value = "";
+    status.classList.remove("error");
+    status.textContent = this.secretUnlocked ? "Tank rahasia sudah terbuka di perangkat ini." : "";
+    this.show("secret");
+    input.focus();
+  }
+
+  private tryUnlock() {
+    const input = this.$<HTMLInputElement>("#secret-code");
+    const status = this.$("#secret-status");
+    if (!isSecretCode(input.value)) {
+      status.textContent = "Kode salah, coba lagi.";
+      status.classList.add("error");
+      // Ulangi animasi getar
+      input.classList.remove("shake");
+      void input.offsetWidth;
+      input.classList.add("shake");
+      return;
+    }
+    this.secretUnlocked = true;
+    save(STORAGE.secret, "1");
+    sound.fanfare();
+    this.setFilter("all");
+    this.selectTank(TANKS.find((t) => t.secret)!);
+    this.show("garage");
+    this.$(".tank-card.secret")?.classList.add("unlocked-now");
   }
 
   private chooseTank() {
@@ -792,12 +868,21 @@ export class App {
   }
 
   private renderGarageCards() {
-    const list = TANKS.filter((t) => this.filter === "all" || t.era === this.filter);
+    // Tank rahasia hanya muncul setelah dibuka, dan ditaruh paling depan
+    const pool = this.secretUnlocked ? [...TANKS].sort((a, b) => Number(!!b.secret) - Number(!!a.secret)) : STANDARD_TANKS;
+    const labels: Record<Filter, string> = { all: "Semua", modern: "Modern", ww2: "PD II" };
+    for (const tab of this.root.querySelectorAll<HTMLElement>("[data-filter]")) {
+      const filter = tab.dataset.filter as Filter;
+      tab.textContent = `${labels[filter]} (${pool.filter((t) => filter === "all" || t.era === filter).length})`;
+    }
+
+    const list = pool.filter((t) => this.filter === "all" || t.era === this.filter);
     this.$("#tank-grid").innerHTML = list
       .map(
         (t) => `
-        <button class="tank-card ${t.id === this.tank.id ? "selected" : ""}" data-tank="${t.id}">
+        <button class="tank-card ${t.secret ? "secret" : ""} ${t.id === this.tank.id ? "selected" : ""}" data-tank="${t.id}">
           ${t.era === "ww2" ? `<span class="era-badge">PD II</span>` : ""}
+          ${t.secret ? `<span class="era-badge secret-badge">★ RAHASIA</span>` : ""}
           <canvas></canvas>
           <div class="card-name">${t.name}</div>
           <div class="card-meta">${flagSvg(t.flag)} ${t.country}</div>

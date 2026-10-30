@@ -513,3 +513,77 @@ input:focus {
     grid-template-columns: 1fr;
   }
 }
+
+/* ---------- Tank rahasia ---------- */
+.secret-btn {
+  flex: none;
+  color: var(--muted);
+  opacity: 0.55;
+}
+
+.secret-dialog {
+  max-width: 420px;
+}
+
+.secret-dialog .sub {
+  margin: 6px 0 14px;
+}
+
+#secret-code {
+  letter-spacing: 0.2em;
+}
+
+#secret-code.shake {
+  animation: shake 0.4s;
+  border-color: #ff8a80;
+}
+
+@keyframes shake {
+  20%,
+  60% {
+    transform: translateX(-6px);
+  }
+  40%,
+  80% {
+    transform: translateX(6px);
+  }
+}
+
+.tank-card.secret {
+  background:
+    linear-gradient(140deg, rgba(212, 169, 58, 0.22), transparent 55%),
+    var(--panel);
+  border-color: rgba(212, 169, 58, 0.55);
+}
+
+.tank-card.secret .card-name {
+  color: #f3d27a;
+}
+
+.tank-card.secret.selected {
+  border-color: #f3d27a;
+  box-shadow:
+    0 0 0 1px #f3d27a,
+    0 6px 24px rgba(243, 210, 122, 0.35);
+}
+
+.tank-card.unlocked-now {
+  animation: unlocked 1.4s ease-out;
+}
+
+@keyframes unlocked {
+  0% {
+    box-shadow: 0 0 0 0 rgba(243, 210, 122, 0.9);
+  }
+  100% {
+    box-shadow: 0 0 0 18px rgba(243, 210, 122, 0);
+  }
+}
+
+.secret-badge {
+  left: auto;
+  right: 6px;
+  background: linear-gradient(135deg, #f3d27a, #b8862b);
+  color: #2a1d05;
+  font-weight: 700;
+}

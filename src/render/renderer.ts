@@ -545,7 +545,10 @@ export class Renderer {
       for (const tread of rig.treads) tread.offset.x = -t.trackDistance / 8;
       setWrecked(rig, !t.alive);
       const flash = t.alive ? t.hitFlash * 0.45 : 0;
-      for (const m of rig.paint) m.emissive.setRGB(flash, flash * 0.85, flash * 0.6);
+      for (const m of rig.paint) {
+        const glow = t.alive ? (m.userData.glow as THREE.Color | undefined) : undefined;
+        m.emissive.setRGB(flash + (glow?.r ?? 0), flash * 0.85 + (glow?.g ?? 0), flash * 0.6 + (glow?.b ?? 0));
+      }
       rig.shield.visible = t.alive && t.shield > 0;
       if (rig.shield.visible) (rig.shield.material as THREE.MeshBasicMaterial).opacity = 0.12 + Math.sin(this.time * 8) * 0.06;
       // Bangkai tenggelam perlahan lalu hilang

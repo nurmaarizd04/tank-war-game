@@ -1,4 +1,4 @@
-import { TANKS, tankById, type TankModel } from "../data/tanks";
+import { STANDARD_TANKS, tankById, type TankModel } from "../data/tanks";
 import { Renderer } from "../render/renderer";
 import { AIController, DIFFICULTIES, type Difficulty } from "./ai";
 import { sound } from "./audio";
@@ -148,7 +148,7 @@ export class Game implements Battle {
   private spawnDemoTeam(team: string) {
     const left = team === "blue";
     for (let i = 0; i < 3; i++) {
-      const tank = new Tank(pick(TANKS), team, left ? rand(250, 600) : rand(1800, 2150), rand(300, 1300));
+      const tank = new Tank(pick(STANDARD_TANKS), team, left ? rand(250, 600) : rand(1800, 2150), rand(300, 1300));
       this.world.resolveCircle(tank, tank.radius);
       tank.angle = left ? 0 : Math.PI;
       tank.turret = tank.angle;
@@ -723,7 +723,7 @@ export class Game implements Battle {
     const count = this.difficulty.waveSize(n);
     for (let i = 0; i < count; i++) {
       const spot = this.world.findOpenSpot(this.local ? [this.local] : [], 750);
-      const enemy = new Tank(pick(TANKS), "enemy", spot.x, spot.y, {
+      const enemy = new Tank(pick(STANDARD_TANKS), "enemy", spot.x, spot.y, {
         hpMult: this.difficulty.hpMult * (1 + (n - 1) * 0.05),
         damageMult: this.difficulty.damageMult * (1 + (n - 1) * 0.03),
         reloadMult: this.difficulty.reloadMult,

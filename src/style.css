@@ -22,6 +22,11 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+/* Atribut hidden harus menang atas display milik .btn */
+[hidden] {
+  display: none !important;
+}
+
 html,
 body {
   margin: 0;
