@@ -933,6 +933,7 @@ export class App {
         (t) => `
         <button class="tank-card ${t.secret && t.secret !== "hidden" ? `secret secret-${t.secret}` : ""} ${t.id === this.tank.id ? "selected" : ""}" data-tank="${t.id}">
           ${t.era === "ww2" ? `<span class="era-badge">PD II</span>` : ""}
+          ${!t.secret && t.year >= 2022 ? `<span class="era-badge">BARU</span>` : ""}
           ${t.secret && t.secret !== "hidden" ? `<span class="era-badge secret-badge">★ RAHASIA</span>` : ""}
           ${t.secret === "hidden" ? `<span class="era-badge">★</span>` : ""}
           <canvas></canvas>

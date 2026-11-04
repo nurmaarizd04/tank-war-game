@@ -154,8 +154,24 @@ function drawHull(ctx: CanvasRenderingContext2D, model: TankModel, rnd: () => nu
   }
 }
 
-function turretShape(look: TankLook, ts: number): Pt[] | "circle" | "ellipse" {
+/** Ukuran dasar turret; tank modern memakai turret yang lebih lebar (dipakai juga oleh model 3D) */
+export function turretSize(model: TankModel) {
+  return model.look.width * (model.era === "modern" ? 0.8 : 0.62) * model.look.turretScale;
+}
+
+export function turretShape(look: TankLook, ts: number): Pt[] | "circle" | "ellipse" {
   switch (look.turret) {
+    case "angular":
+      return [
+        [-ts * 0.6, -ts * 0.36],
+        [-ts * 0.5, -ts * 0.46],
+        [ts * 0.26, -ts * 0.46],
+        [ts * 0.62, -ts * 0.17],
+        [ts * 0.62, ts * 0.17],
+        [ts * 0.26, ts * 0.46],
+        [-ts * 0.5, ts * 0.46],
+        [-ts * 0.6, ts * 0.36],
+      ];
     case "wedge":
       return [
         [-ts * 0.5, -ts * 0.46],
@@ -192,7 +208,7 @@ function turretShape(look: TankLook, ts: number): Pt[] | "circle" | "ellipse" {
 
 function drawTurret(ctx: CanvasRenderingContext2D, model: TankModel, rnd: () => number) {
   const look = model.look;
-  const ts = look.width * 0.62 * look.turretScale;
+  const ts = turretSize(model);
   const bw = look.barrelWidth;
 
   // Laras
@@ -247,7 +263,8 @@ function drawTurret(ctx: CanvasRenderingContext2D, model: TankModel, rnd: () => 
     }
   }
 
-  // Palka komandan & periskop
+  // Palka komandan & periskop (turret tanpa awak tidak punya palka)
+  if (look.unmanned) return;
   ctx.fillStyle = shade(look.colors[0], -20);
   ctx.strokeStyle = "rgba(0,0,0,0.6)";
   ctx.lineWidth = 0.8;
@@ -273,6 +290,17 @@ function makeCanvas(w: number, h: number) {
   return { canvas, ctx };
 }
 
+/** Kanvas kamuflase penuh (tanpa garis bentuk) untuk permukaan atas model 3D tank modern */
+export function camoCanvas(model: TankModel, w: number, h: number) {
+  const { canvas, ctx } = makeCanvas(w, h);
+  const rect = () => {
+    ctx.beginPath();
+    ctx.rect(-w / 2, -h / 2, w, h);
+  };
+  paintBody(ctx, model.look, rect, seededRandom(hashString(model.id) + 3), w, h);
+  return canvas;
+}
+
 function wreckOf(source: HTMLCanvasElement) {
   const canvas = document.createElement("canvas");
   canvas.width = source.width;
@@ -295,7 +323,7 @@ export function getTankSprites(model: TankModel): TankSprites {
   const hull = makeCanvas(L + 6, W + 6);
   drawHull(hull.ctx, model, seededRandom(hashString(model.id)));
 
-  const ts = W * 0.62 * model.look.turretScale;
+  const ts = turretSize(model);
   const muzzle = ts * 0.3 + model.look.barrel;
   const span = (muzzle + 4) * 2;
   const turret = makeCanvas(span, span);
