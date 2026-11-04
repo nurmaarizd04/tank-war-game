@@ -48,9 +48,27 @@ export interface TankModel {
   shellSpeed: number;
   range: number;
   look: TankLook;
-  /** Tank rahasia: tersembunyi sampai dibuka dengan kode, tidak dipakai lawan komputer */
-  secret?: boolean;
+  /**
+   * Tank rahasia: tersembunyi sampai dibuka dengan kode, tidak dipakai lawan komputer.
+   * "gold"/"silver" berlapis logam mengilap; "hidden" menyamar persis seperti tank biasa.
+   */
+  secret?: "gold" | "silver" | "hidden";
 }
+
+/** Dipakai bersama oleh Pindad Harimau dan tank rahasia yang menyamar sebagai Harimau */
+const HARIMAU_LOOK: TankLook = {
+  length: 66,
+  width: 37,
+  colors: ["#4d5a35", "#2d3320", "#7a6a3e"],
+  camo: "blobs",
+  turret: "wedge",
+  turretScale: 0.95,
+  turretOffset: -2,
+  barrel: 46,
+  barrelWidth: 3.6,
+  muzzleBrake: true,
+};
+const HARIMAU_DESCRIPTION = "Tank medium kebanggaan Indonesia buatan PT Pindad. Sangat cepat dan menembak bertubi-tubi.";
 
 export const TANKS: TankModel[] = [
   {
@@ -423,7 +441,7 @@ export const TANKS: TankModel[] = [
     flag: "id",
     era: "modern",
     year: 2021,
-    description: "Tank medium kebanggaan Indonesia buatan PT Pindad. Sangat cepat dan menembak bertubi-tubi.",
+    description: HARIMAU_DESCRIPTION,
     hp: 175,
     armor: 0.16,
     speed: 138,
@@ -433,18 +451,7 @@ export const TANKS: TankModel[] = [
     reload: 1.5,
     shellSpeed: 950,
     range: 620,
-    look: {
-      length: 66,
-      width: 37,
-      colors: ["#4d5a35", "#2d3320", "#7a6a3e"],
-      camo: "blobs",
-      turret: "wedge",
-      turretScale: 0.95,
-      turretOffset: -2,
-      barrel: 46,
-      barrelWidth: 3.6,
-      muzzleBrake: true,
-    },
+    look: HARIMAU_LOOK,
   },
   {
     id: "tiger1",
@@ -557,7 +564,7 @@ export const TANKS: TankModel[] = [
     reload: 1.3,
     shellSpeed: 1350,
     range: 860,
-    secret: true,
+    secret: "gold",
     look: {
       length: 80,
       width: 44,
@@ -571,6 +578,61 @@ export const TANKS: TankModel[] = [
       muzzleBrake: true,
       era: true,
     },
+  },
+  {
+    id: "rajawali-x2",
+    name: "Rajawali X-2",
+    country: "Indonesia",
+    flag: "id",
+    era: "modern",
+    year: 2026,
+    description:
+      "Adik Garuda X-1 berlapis krom perak. Meriam 130 mm menghancurkan tank biasa dalam dua-tiga tembakan, armor reaktif, dan sangat gesit.",
+    hp: 300,
+    armor: 0.35,
+    speed: 134,
+    hullTurn: 2.5,
+    turretTurn: 2.7,
+    damage: 110,
+    reload: 1.4,
+    shellSpeed: 1200,
+    range: 760,
+    secret: "silver",
+    look: {
+      length: 74,
+      width: 41,
+      colors: ["#3a3f47", "#c9ced6", "#262a31"],
+      camo: "digital",
+      turret: "wedge",
+      turretScale: 1.12,
+      turretOffset: 0,
+      barrel: 58,
+      barrelWidth: 4.6,
+      muzzleBrake: true,
+      era: true,
+    },
+  },
+  {
+    // Menyamar: nama, bendera, deskripsi & model 3D sama persis dengan Pindad Harimau,
+    // jadi pemain lain hanya melihat "Pindad Harimau". Kemampuannya di atas Rajawali X-2.
+    id: "harimau-k",
+    name: "Pindad Harimau",
+    country: "Indonesia",
+    flag: "id",
+    era: "modern",
+    year: 2021,
+    description: HARIMAU_DESCRIPTION,
+    hp: 340,
+    armor: 0.38,
+    speed: 140,
+    hullTurn: 2.6,
+    turretTurn: 2.8,
+    damage: 140,
+    reload: 1.35,
+    shellSpeed: 1250,
+    range: 800,
+    secret: "hidden",
+    look: HARIMAU_LOOK,
   },
 ];
 
@@ -586,9 +648,18 @@ function hashCode(text: string) {
   return h;
 }
 
-const SECRET_CODE_HASH = 796724727;
+/** Hash kode rahasia → id tank yang dibuka */
+const SECRET_CODES: Record<number, string> = {
+  796724727: "garuda-x1",
+  669089267: "rajawali-x2",
+  3658736598: "harimau-k",
+};
 
-export const isSecretCode = (code: string) => hashCode(code.trim().toLowerCase()) === SECRET_CODE_HASH;
+/** Tank rahasia yang dibuka oleh kode ini, atau undefined bila kodenya salah */
+export function secretTankForCode(code: string) {
+  const id = SECRET_CODES[hashCode(code.trim().toLowerCase())];
+  return id ? tankById(id) : undefined;
+}
 
 /** Nilai 0–1 untuk bar statistik di garasi */
 export function tankRatings(t: TankModel) {

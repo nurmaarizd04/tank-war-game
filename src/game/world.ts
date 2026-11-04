@@ -1,3 +1,4 @@
+import { mapById, type MapTheme } from "../data/maps";
 import { seededRandom } from "./math";
 
 export type ObstacleKind = "building" | "wall" | "crate" | "barrel" | "tree" | "rock";
@@ -30,6 +31,7 @@ export class World {
   readonly width = WORLD_WIDTH;
   readonly height = WORLD_HEIGHT;
   readonly seed: number;
+  readonly theme: MapTheme;
   obstacles: Obstacle[] = [];
   /** Tekstur tanah (dibuat sekali) */
   ground: HTMLCanvasElement;
@@ -37,8 +39,9 @@ export class World {
   decals: Decal[] = [];
   private rng: () => number;
 
-  constructor(seed: number) {
+  constructor(seed: number, mapId?: string) {
     this.seed = seed;
+    this.theme = mapById(mapId);
     this.rng = seededRandom(seed);
     this.ground = document.createElement("canvas");
     this.ground.width = this.width / 2;
@@ -56,40 +59,44 @@ export class World {
     const ctx = this.ground.getContext("2d")!;
     const W = this.ground.width;
     const H = this.ground.height;
+    const { ground, patch, road, speck } = this.theme;
     const g = ctx.createLinearGradient(0, 0, W, H);
-    g.addColorStop(0, "#6a8740");
-    g.addColorStop(0.5, "#5f7d3d");
-    g.addColorStop(1, "#557236");
+    g.addColorStop(0, ground[0]);
+    g.addColorStop(0.5, ground[1]);
+    g.addColorStop(1, ground[2]);
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, W, H);
 
+    const [pr, pg, pb] = patch.color;
+    const j = patch.jitter;
     for (let i = 0; i < 220; i++) {
-      ctx.fillStyle = `rgba(${this.r(65, 115)},${this.r(100, 140)},${this.r(40, 70)},${this.r(0.15, 0.35)})`;
+      ctx.fillStyle = `rgba(${this.r(pr - j, pr + j)},${this.r(pg - j, pg + j)},${this.r(pb - j, pb + j)},${this.r(patch.alpha[0], patch.alpha[1])})`;
       ctx.beginPath();
       ctx.ellipse(this.r(0, W), this.r(0, H), this.r(15, 70), this.r(10, 45), this.r(0, Math.PI), 0, Math.PI * 2);
       ctx.fill();
     }
 
     ctx.lineCap = "round";
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < road.count; i++) {
       const y0 = this.r(100, H - 100);
       const y1 = this.r(100, H - 100);
       const c1 = this.r(0, H);
       const c2 = this.r(0, H);
-      ctx.strokeStyle = "rgba(128,102,66,0.6)";
+      ctx.strokeStyle = road.color;
       ctx.lineWidth = this.r(25, 40);
       ctx.beginPath();
       ctx.moveTo(-25, y0);
       ctx.bezierCurveTo(W * 0.3, c1, W * 0.7, c2, W + 25, y1);
       ctx.stroke();
-      ctx.strokeStyle = "rgba(156,130,88,0.4)";
+      ctx.strokeStyle = road.highlight;
       ctx.lineWidth *= 0.55;
       ctx.stroke();
     }
 
     for (let i = 0; i < 2600; i++) {
       const roll = this.rng();
-      ctx.fillStyle = roll < 0.03 ? (roll < 0.015 ? "#e8d36a" : "#ececec") : `rgba(40,70,25,${this.r(0.2, 0.5)})`;
+      const flower = speck.flowers && roll < 0.03;
+      ctx.fillStyle = flower ? (roll < 0.015 ? "#e8d36a" : "#ececec") : `rgba(${speck.color.join(",")},${this.r(0.2, 0.5)})`;
       ctx.fillRect(this.r(0, W), this.r(0, H), this.r(0.6, 1.8), this.r(0.6, 1.8));
     }
   }
@@ -136,9 +143,11 @@ export class World {
   private placeObstacles() {
     const W = this.width;
     const H = this.height;
-    this.scatter(9, 300, () => this.make("building", this.r(0, W), this.r(0, H), { w: this.r(110, 180), h: this.r(90, 140) }), 130);
+    const count = this.theme.obstacles;
+    // Peta padat (kota) memakai jarak antar gedung yang lebih rapat
+    this.scatter(count.building, 300, () => this.make("building", this.r(0, W), this.r(0, H), { w: this.r(110, 180), h: this.r(90, 140) }), count.building > 12 ? 85 : 130);
     this.scatter(
-      8,
+      count.wall,
       300,
       () => {
         const horizontal = this.rng() < 0.5;
@@ -147,10 +156,10 @@ export class World {
       },
       110,
     );
-    this.scatter(9, 300, () => this.make("rock", this.r(0, W), this.r(0, H), { r: this.r(20, 36) }), 70);
-    this.scatter(34, 600, () => this.make("tree", this.r(0, W), this.r(0, H), { r: this.r(17, 26) }), 40);
-    this.scatter(14, 400, () => this.make("crate", this.r(0, W), this.r(0, H), { w: 30, h: 30 }), 50);
-    this.scatter(10, 400, () => this.make("barrel", this.r(0, W), this.r(0, H), { r: 12 }), 60);
+    this.scatter(count.rock, 300, () => this.make("rock", this.r(0, W), this.r(0, H), { r: this.r(20, 36) }), 70);
+    this.scatter(count.tree, 600, () => this.make("tree", this.r(0, W), this.r(0, H), { r: this.r(17, 26) }), 40);
+    this.scatter(count.crate, 400, () => this.make("crate", this.r(0, W), this.r(0, H), { w: 30, h: 30 }), 50);
+    this.scatter(count.barrel, 400, () => this.make("barrel", this.r(0, W), this.r(0, H), { r: 12 }), 60);
   }
 
   /** Apakah titik berada di dalam obstacle yang menghalangi */

@@ -1,7 +1,9 @@
+import { MAPS } from "../data/maps";
 import { STANDARD_TANKS, tankById, type TankModel } from "../data/tanks";
 import { Renderer } from "../render/renderer";
 import { AIController, DIFFICULTIES, type Difficulty } from "./ai";
 import { sound } from "./audio";
+import { crew } from "./crew";
 import { Effects } from "./effects";
 import { Input } from "./input";
 import { angleDiff, clamp, pick, rand, smoothing } from "./math";
@@ -113,8 +115,8 @@ export class Game implements Battle {
 
   // ---------------- Mode ----------------
 
-  private reset(seed: number) {
-    this.world = new World(seed);
+  private reset(seed: number, mapId?: string) {
+    this.world = new World(seed, mapId);
     this.renderer.setWorld(this.world);
     this.effects = new Effects();
     this.tanks = [];
@@ -134,11 +136,12 @@ export class Game implements Battle {
     this.targets.clear();
     this.matchOver = false;
     this.input.reset();
+    crew.silence();
   }
 
   /** Pertempuran AI vs AI sebagai latar menu */
   startDemo() {
-    this.reset(Math.floor(Math.random() * 1e9));
+    this.reset(Math.floor(Math.random() * 1e9), pick(MAPS).id);
     this.mode = "demo";
     this.difficulty = DIFFICULTIES[1];
     for (const team of ["blue", "red"]) this.spawnDemoTeam(team);
@@ -157,21 +160,21 @@ export class Game implements Battle {
     }
   }
 
-  startSolo(model: TankModel, difficulty: Difficulty) {
-    this.reset(Math.floor(Math.random() * 1e9));
+  startSolo(model: TankModel, difficulty: Difficulty, mapId: string) {
+    this.reset(Math.floor(Math.random() * 1e9), mapId);
     this.mode = "solo";
     this.difficulty = difficulty;
     this.local = new Tank(model, "player", this.world.width / 2, this.world.height / 2);
     this.local.angle = -Math.PI / 2;
     this.local.turret = this.local.angle;
     this.tanks.push(this.local);
-    this.renderer.focus(this.local.x, this.local.y, true);
+    this.renderer.chase(this.local.x, this.local.y, this.local.angle, true);
     this.intermission = 1.2;
   }
 
   /** Versus semua lawan semua. Host menjalankan simulasi, client hanya menampilkan. */
   startVersus(role: "host" | "client", seed: number, players: VersusPlayer[], settings: VersusSettings, localId: string) {
-    this.reset(seed);
+    this.reset(seed, settings.map);
     this.mode = role;
     this.players = players;
     this.settings = settings;
@@ -191,13 +194,15 @@ export class Game implements Battle {
       this.scores.set(p.id, { kills: 0, deaths: 0 });
       if (p.id === localId) this.local = tank;
     });
-    if (this.local) this.renderer.focus(this.local.x, this.local.y, true);
+    if (this.local) this.renderer.chase(this.local.x, this.local.y, this.local.angle, true);
     this.events.banner("Pertempuran Dimulai!", `Hancurkan ${settings.killLimit} tank untuk menang`);
     sound.fanfare();
+    crew.say("start");
   }
 
   stop() {
     this.mode = "idle";
+    crew.silence();
   }
 
   setRemoteInput(id: string, ctrl: Controls) {
@@ -254,7 +259,10 @@ export class Game implements Battle {
         if (tank) tank.recoil = 1;
         this.effects.muzzle(ev.x, ev.y, ev.a);
         sound.fire(this.volumeAt(ev.x, ev.y));
-        if (tank && tank === this.local) this.renderer.shake(5);
+        if (tank && tank === this.local) {
+          this.renderer.shake(5);
+          crew.fired(tank.reloadTime);
+        }
         break;
       }
       case "imp":
@@ -267,7 +275,10 @@ export class Game implements Battle {
         tank.hitFlash = 1;
         const color = tank === this.local ? "#ff6b6b" : ev.c ? "#ffd166" : "#ffffff";
         this.effects.text(tank.x, tank.y, `-${ev.n}${ev.c ? " KRITIS!" : ""}`, color, ev.c ? 20 : 17);
-        if (tank === this.local) this.renderer.shake(9);
+        if (tank === this.local) {
+          this.renderer.shake(9);
+          crew.damaged(tank.hp / tank.maxHp);
+        } else if (ev.a && ev.a === this.local?.id && tank.hp > 0) crew.say("hit");
         break;
       }
       case "boom":
@@ -292,6 +303,8 @@ export class Game implements Battle {
           victim.hp = 0;
           victim.deadTime = 0;
         }
+        if (this.local && ev.v === this.local.id) crew.say("dead");
+        else if (this.local && ev.a === this.local.id) crew.say("kill");
         if (this.isVersus) {
           this.events.killFeed(this.nameOf(ev.a), this.nameOf(ev.v) ?? "?", ev.a === this.local?.id, ev.v === this.local?.id);
           if (ev.v === this.local?.id) this.events.banner("Tank kamu hancur!", ev.a && ev.a !== ev.v ? `Dihancurkan oleh ${this.nameOf(ev.a)}` : "Muncul kembali sebentar lagi");
@@ -303,7 +316,11 @@ export class Game implements Battle {
         const tank = this.tankById(ev.id);
         if (!tank) break;
         this.effects.text(tank.x, tank.y, ev.p === 0 ? "+HP" : "TEMBAK CEPAT!", ev.p === 0 ? "#7dff9a" : "#ffd166", 18);
-        if (tank === this.local) sound.pickup();
+        if (tank === this.local) {
+          sound.pickup();
+          crew.say(ev.p === 0 ? "repair" : "rapid");
+          if (ev.p === 0) crew.healed(tank.hp / tank.maxHp);
+        }
         break;
       }
     }
@@ -325,15 +342,18 @@ export class Game implements Battle {
   };
 
   private playerControls(player: Tank): Controls {
-    const move = this.input.move;
+    // Input mengikuti arah kamera: "atas" di layar = arah pandang kamera (depan tank)
+    const raw = this.input.move;
+    const move = this.renderer.viewToWorld(raw.x, raw.y);
     let aim: number | null = null;
     let fire = this.input.keyFire;
     const stick = this.input.aimStick;
     if (stick) {
-      aim = stick.angle;
+      const dir = this.renderer.viewToWorld(Math.cos(stick.angle), Math.sin(stick.angle));
+      aim = Math.atan2(dir.y, dir.x);
       fire = fire || stick.firing;
     } else if (this.input.mouse.used && !this.input.touchUsed) {
-      const p = this.renderer.screenToGround(this.input.mouse.x, this.input.mouse.y);
+      const p = this.renderer.screenToGround(this.input.mouse.x, this.input.mouse.y, true);
       if (p) aim = Math.atan2(p.y - player.pivotY, p.x - player.pivotX);
     } else {
       aim = this.autoAim(player) ?? (Math.hypot(move.x, move.y) > 0.2 ? Math.atan2(move.y, move.x) : null);
@@ -455,6 +475,7 @@ export class Game implements Battle {
       if (respawned) {
         tank.deadTime = 0;
         tank.alive = true;
+        if (tank === this.local) crew.respawned();
       } else if (alive === 0 && tank.alive) {
         tank.alive = false;
         tank.deadTime = 0;
@@ -481,7 +502,7 @@ export class Game implements Battle {
   private followLocal() {
     const target = this.local ?? null;
     if (target) {
-      this.renderer.focus(target.x + Math.cos(target.turret) * 70, target.y + Math.sin(target.turret) * 70);
+      this.renderer.chase(target.x, target.y, target.angle);
     } else {
       const alive = this.tanks.filter((t) => t.alive);
       if (alive.length) this.renderer.focus(alive.reduce((s, t) => s + t.x, 0) / alive.length, alive.reduce((s, t) => s + t.y, 0) / alive.length, false, 1.2);
@@ -614,7 +635,7 @@ export class Game implements Battle {
       const amount = Math.round(damage * (1 - d / radius) * (1 - t.model.armor * 0.5));
       if (amount <= 0) continue;
       t.hp -= amount;
-      this.emit({ k: "dmg", id: t.id, n: amount, c: 0 });
+      this.emit({ k: "dmg", id: t.id, n: amount, c: 0, a: by?.id });
       if (t.hp <= 0) this.killTank(t, by);
     }
     for (const o of this.world.obstacles) {
@@ -636,7 +657,7 @@ export class Game implements Battle {
     const mult = facing > 0.55 ? 0.8 : facing < -0.55 ? 1.4 : 1;
     const amount = Math.max(1, Math.round(s.damage * mult * (1 - t.model.armor) * rand(0.9, 1.1)));
     t.hp -= amount;
-    this.emit({ k: "dmg", id: t.id, n: amount, c: mult > 1 ? 1 : 0 });
+    this.emit({ k: "dmg", id: t.id, n: amount, c: mult > 1 ? 1 : 0, a: s.owner.id });
     if (t.hp <= 0) this.killTank(t, s.owner);
   }
 
@@ -708,6 +729,7 @@ export class Game implements Battle {
       if (this.wave > 0) {
         const heal = Math.round(player.maxHp * 0.25);
         player.hp = Math.min(player.maxHp, player.hp + heal);
+        crew.healed(player.hp / player.maxHp);
         this.score += Math.round(50 * this.wave * this.difficulty.scoreMult);
         this.events.banner(`Gelombang ${this.wave} selesai!`, `Tank diperbaiki +${heal} HP`);
       }
@@ -735,6 +757,7 @@ export class Game implements Battle {
     }
     this.events.banner(`Gelombang ${n}`, `${count} tank musuh mendekat!`);
     sound.fanfare();
+    crew.say(n === 1 ? "start" : "wave");
   }
 
   private finishSolo() {
@@ -789,6 +812,7 @@ export class Game implements Battle {
         const others = this.tanks.filter((t) => t !== tank && t.alive);
         const spot = this.world.findOpenSpot(others, 550);
         tank.respawn(spot.x, spot.y, Math.atan2(this.world.height / 2 - spot.y, this.world.width / 2 - spot.x));
+        if (tank === this.local) crew.respawned();
       }
 
       // Item muncul berkala di arena

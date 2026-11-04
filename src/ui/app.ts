@@ -1,7 +1,9 @@
 import { flagSvg } from "../data/flags";
-import { STANDARD_TANKS, TANKS, isSecretCode, tankById, tankRatings, type TankModel } from "../data/tanks";
+import { MAPS, mapById } from "../data/maps";
+import { STANDARD_TANKS, TANKS, secretTankForCode, tankById, tankRatings, type TankModel } from "../data/tanks";
 import { DIFFICULTIES, type Difficulty, type DifficultyId } from "../game/ai";
 import { sound } from "../game/audio";
+import { crew } from "../game/crew";
 import type { Game, GameResult, HudState } from "../game/game";
 import { music } from "../game/music";
 import type { ScoreRow, VersusSettings } from "../game/protocol";
@@ -34,6 +36,8 @@ const ICONS = {
   musicOff: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 17.5V6l11-2v11.5" /><circle cx="6.5" cy="17.5" r="2.5" fill="currentColor"/><circle cx="17.5" cy="15.5" r="2.5" fill="currentColor"/><path d="M3 3l18 18" stroke-width="2.4"/></svg>`,
   copy: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>`,
   key: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="M10.8 12.2L20 3M16 7l3 3M14 9l2 2"/></svg>`,
+  crewOn: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="2.5" y="13" width="4.5" height="7" rx="1.5" fill="currentColor"/><rect x="17" y="13" width="4.5" height="7" rx="1.5" fill="currentColor"/><path d="M19 20c0 1.6-2.2 2.2-5.5 2.2"/></svg>`,
+  crewOff: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="2.5" y="13" width="4.5" height="7" rx="1.5" fill="currentColor"/><rect x="17" y="13" width="4.5" height="7" rx="1.5" fill="currentColor"/><path d="M3 3l18 18" stroke-width="2.4"/></svg>`,
   share: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>`,
 };
 
@@ -43,6 +47,7 @@ const STORAGE = {
   best: "tank-best-score",
   name: "tank-name",
   secret: "tank-secret-unlocked",
+  map: "tank-map",
 };
 const KILL_OPTIONS = [5, 10, 15, 20];
 const TIME_OPTIONS = [180, 300, 480];
@@ -53,6 +58,13 @@ function load(key: string) {
   } catch {
     return null;
   }
+}
+
+/** Daftar id tank rahasia yang terbuka; nilai lama "1" berarti Garuda X-1 */
+function loadUnlocked() {
+  const value = load(STORAGE.secret);
+  if (!value) return new Set<string>();
+  return new Set(value === "1" ? ["garuda-x1"] : value.split(","));
 }
 
 function save(key: string, value: string) {
@@ -102,20 +114,23 @@ export class App {
   private host: HostSession | null = null;
   private client: ClientSession | null = null;
   private preview: TankPreview | null = null;
-  /** Tank rahasia sudah dibuka dengan kode (tersimpan di perangkat ini) */
-  private secretUnlocked = load(STORAGE.secret) === "1";
+  /** Id tank rahasia yang sudah dibuka dengan kode (tersimpan di perangkat ini) */
+  private unlocked = loadUnlocked();
+  /** Peta pilihan untuk mode latihan */
+  private soloMap = mapById(load(STORAGE.map) ?? undefined).id;
 
   constructor(root: HTMLElement, game: Game) {
     this.root = root;
     this.game = game;
     this.tank = tankById(load(STORAGE.tank) ?? "harimau");
-    if (this.tank.secret && !this.secretUnlocked) this.tank = tankById("harimau");
+    if (this.tank.secret && !this.unlocked.has(this.tank.id)) this.tank = tankById("harimau");
     this.difficulty = DIFFICULTIES.find((d) => d.id === (load(STORAGE.difficulty) as DifficultyId)) ?? DIFFICULTIES[1];
     root.innerHTML = this.markup();
     this.bind();
     this.renderGarageCards();
     this.renderDetail();
     this.renderToggles();
+    this.selectSoloMap(this.soloMap);
     this.$<HTMLInputElement>("#player-name").value = load(STORAGE.name) ?? `Pemain${Math.floor(Math.random() * 90 + 10)}`;
 
     game.onSnapshot = (s) => this.host?.sendSnapshot(s);
@@ -161,6 +176,7 @@ export class App {
         <div class="toggles">
           <button class="icon-btn" data-action="toggle-music" aria-label="Musik"></button>
           <button class="icon-btn" data-action="toggle-sfx" aria-label="Efek suara"></button>
+          <button class="icon-btn" data-action="toggle-crew" aria-label="Suara kru"></button>
         </div>
         <button class="menu-tank" data-action="garage" aria-label="Ganti tank">
           <div class="label">Tank kamu</div>
@@ -233,6 +249,10 @@ export class App {
               <span>Durasi</span>
               <div class="segmented">${TIME_OPTIONS.map((t) => `<button data-time="${t}">${t / 60} mnt</button>`).join("")}</div>
             </div>
+            <div class="setting">
+              <span>Peta</span>
+              <div class="segmented">${MAPS.map((m) => `<button data-map="${m.id}">${m.short}</button>`).join("")}</div>
+            </div>
           </div>
           <button class="btn btn-primary" id="btn-start" data-action="start-match">Mulai Pertempuran</button>
           <p class="status" id="lobby-status"></p>
@@ -282,7 +302,11 @@ export class App {
     <section class="screen backdrop panel-screen" id="screen-difficulty">
       <div class="screen-head">
         <button class="icon-btn" data-action="garage" aria-label="Kembali">${ICONS.back}</button>
-        <h2>Latihan: Pilih Kesulitan</h2>
+        <h2>Latihan: Pilih Peta & Kesulitan</h2>
+      </div>
+      <div class="map-pick">
+        <div class="segmented">${MAPS.map((m) => `<button data-solo-map="${m.id}">${m.name}</button>`).join("")}</div>
+        <p id="solo-map-desc"></p>
       </div>
       <div class="difficulty-row">
         ${DIFFICULTIES.map(
@@ -354,6 +378,7 @@ export class App {
       <div class="hud-right">
         <button class="icon-btn" data-action="toggle-music" aria-label="Musik"></button>
         <button class="icon-btn" data-action="toggle-sfx" aria-label="Efek suara"></button>
+        <button class="icon-btn" data-action="toggle-crew" aria-label="Suara kru"></button>
         <button class="icon-btn" data-action="pause" aria-label="Menu">${ICONS.pause}</button>
       </div>
       <ul class="killfeed" id="killfeed"></ul>
@@ -418,8 +443,11 @@ export class App {
       const difficulty = target.closest<HTMLElement>("[data-difficulty]")?.dataset.difficulty as DifficultyId | undefined;
       const kill = target.closest<HTMLElement>("[data-kill]")?.dataset.kill;
       const time = target.closest<HTMLElement>("[data-time]")?.dataset.time;
-      if (action || card || filter || difficulty || kill || time) {
+      const map = target.closest<HTMLElement>("[data-map]")?.dataset.map;
+      const soloMap = target.closest<HTMLElement>("[data-solo-map]")?.dataset.soloMap;
+      if (action || card || filter || difficulty || kill || time || map || soloMap) {
         sound.unlock();
+        crew.unlock();
         sound.click();
       }
       if (card) this.selectTank(tankById(card.dataset.tank!));
@@ -427,6 +455,8 @@ export class App {
       if (difficulty) this.startSolo(DIFFICULTIES.find((d) => d.id === difficulty)!);
       if (kill && this.host) this.host.setSettings({ ...this.host.settings, killLimit: Number(kill) });
       if (time && this.host) this.host.setSettings({ ...this.host.settings, timeLimit: Number(time) });
+      if (map && this.host) this.host.setSettings({ ...this.host.settings, map });
+      if (soloMap) this.selectSoloMap(soloMap);
       if (action) this.handleAction(action);
     });
 
@@ -544,6 +574,11 @@ export class App {
         sound.setSfx(!sound.sfxOn);
         this.renderToggles();
         break;
+      case "toggle-crew":
+        crew.setEnabled(!crew.enabled);
+        if (crew.enabled) crew.say("start");
+        this.renderToggles();
+        break;
     }
   }
 
@@ -579,7 +614,8 @@ export class App {
     const status = this.$("#secret-status");
     input.value = "";
     status.classList.remove("error");
-    status.textContent = this.secretUnlocked ? "Tank rahasia sudah terbuka di perangkat ini." : "";
+    const names = TANKS.filter((t) => this.unlocked.has(t.id)).map((t) => t.name);
+    status.textContent = names.length ? `Sudah terbuka di perangkat ini: ${names.join(", ")}.` : "";
     this.show("secret");
     input.focus();
   }
@@ -587,7 +623,8 @@ export class App {
   private tryUnlock() {
     const input = this.$<HTMLInputElement>("#secret-code");
     const status = this.$("#secret-status");
-    if (!isSecretCode(input.value)) {
+    const model = secretTankForCode(input.value);
+    if (!model) {
       status.textContent = "Kode salah, coba lagi.";
       status.classList.add("error");
       // Ulangi animasi getar
@@ -596,13 +633,13 @@ export class App {
       input.classList.add("shake");
       return;
     }
-    this.secretUnlocked = true;
-    save(STORAGE.secret, "1");
+    this.unlocked.add(model.id);
+    save(STORAGE.secret, [...this.unlocked].join(","));
     sound.fanfare();
     this.setFilter("all");
-    this.selectTank(TANKS.find((t) => t.secret)!);
+    this.selectTank(model);
     this.show("garage");
-    this.$(".tank-card.secret")?.classList.add("unlocked-now");
+    this.$(`.tank-card[data-tank="${model.id}"]`)?.classList.add("unlocked-now");
   }
 
   private chooseTank() {
@@ -636,8 +673,15 @@ export class App {
   private startSolo(difficulty: Difficulty) {
     this.difficulty = difficulty;
     save(STORAGE.difficulty, difficulty.id);
-    this.game.startSolo(this.tank, difficulty);
+    this.game.startSolo(this.tank, difficulty, this.soloMap);
     this.enterBattle(false);
+  }
+
+  private selectSoloMap(id: string) {
+    this.soloMap = mapById(id).id;
+    save(STORAGE.map, this.soloMap);
+    for (const b of this.root.querySelectorAll<HTMLElement>("[data-solo-map]")) b.classList.toggle("active", b.dataset.soloMap === this.soloMap);
+    this.$("#solo-map-desc").textContent = mapById(this.soloMap).description;
   }
 
   private leaveBattle() {
@@ -761,7 +805,7 @@ export class App {
   }
 
   private get lobbySettings(): VersusSettings {
-    return this.host?.settings ?? this.client?.settings ?? { killLimit: 10, timeLimit: 300 };
+    return this.host?.settings ?? this.client?.settings ?? { killLimit: 10, timeLimit: 300, map: "padang" };
   }
 
   private renderLobby() {
@@ -791,6 +835,7 @@ export class App {
     this.$("#lobby-settings").classList.toggle("readonly", !isHost);
     for (const b of this.root.querySelectorAll<HTMLElement>("[data-kill]")) b.classList.toggle("active", Number(b.dataset.kill) === settings.killLimit);
     for (const b of this.root.querySelectorAll<HTMLElement>("[data-time]")) b.classList.toggle("active", Number(b.dataset.time) === settings.timeLimit);
+    for (const b of this.root.querySelectorAll<HTMLElement>("[data-map]")) b.classList.toggle("active", b.dataset.map === mapById(settings.map).id);
     const start = this.$<HTMLButtonElement>("#btn-start");
     start.hidden = !isHost;
     start.disabled = players.length < 2;
@@ -850,6 +895,12 @@ export class App {
       b.innerHTML = sound.sfxOn ? ICONS.sfxOn : ICONS.sfxOff;
       b.classList.toggle("off", !sound.sfxOn);
     }
+    for (const b of this.root.querySelectorAll<HTMLElement>("[data-action=toggle-crew]")) {
+      b.innerHTML = crew.enabled ? ICONS.crewOn : ICONS.crewOff;
+      b.classList.toggle("off", !crew.enabled);
+      // Browser tanpa Web Speech: sembunyikan tombolnya
+      b.hidden = !crew.supported;
+    }
   }
 
   private renderMenu() {
@@ -869,7 +920,7 @@ export class App {
 
   private renderGarageCards() {
     // Tank rahasia hanya muncul setelah dibuka, dan ditaruh paling depan
-    const pool = this.secretUnlocked ? [...TANKS].sort((a, b) => Number(!!b.secret) - Number(!!a.secret)) : STANDARD_TANKS;
+    const pool = TANKS.filter((t) => !t.secret || this.unlocked.has(t.id)).sort((a, b) => Number(!!b.secret) - Number(!!a.secret));
     const labels: Record<Filter, string> = { all: "Semua", modern: "Modern", ww2: "PD II" };
     for (const tab of this.root.querySelectorAll<HTMLElement>("[data-filter]")) {
       const filter = tab.dataset.filter as Filter;
@@ -880,9 +931,10 @@ export class App {
     this.$("#tank-grid").innerHTML = list
       .map(
         (t) => `
-        <button class="tank-card ${t.secret ? "secret" : ""} ${t.id === this.tank.id ? "selected" : ""}" data-tank="${t.id}">
+        <button class="tank-card ${t.secret && t.secret !== "hidden" ? `secret secret-${t.secret}` : ""} ${t.id === this.tank.id ? "selected" : ""}" data-tank="${t.id}">
           ${t.era === "ww2" ? `<span class="era-badge">PD II</span>` : ""}
-          ${t.secret ? `<span class="era-badge secret-badge">★ RAHASIA</span>` : ""}
+          ${t.secret && t.secret !== "hidden" ? `<span class="era-badge secret-badge">★ RAHASIA</span>` : ""}
+          ${t.secret === "hidden" ? `<span class="era-badge">★</span>` : ""}
           <canvas></canvas>
           <div class="card-name">${t.name}</div>
           <div class="card-meta">${flagSvg(t.flag)} ${t.country}</div>

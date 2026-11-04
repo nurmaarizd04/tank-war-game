@@ -15,15 +15,22 @@ dan **musik latar orisinal** dibuat lewat kode — tanpa file gambar/audio berha
 - **Main bersama teman lewat internet** — buat room, bagikan kode 5 huruf / link, hingga 10 pemain
   saling lawan. Atur target hancurkan (5–20) & durasi (3–8 menit). Tank yang hancur muncul kembali
   dengan perisai sesaat. Ada papan peringkat, kill feed, dan papan skor akhir.
+- **4 peta**: Padang Rumput, Gurun, Salju, dan Kota — masing-masing dengan warna tanah, langit,
+  pohon, dan kepadatan rintangan berbeda. Dipilih di layar latihan, atau oleh host di lobi online.
+- **Kamera dari belakang tank** yang ikut berputar mengikuti arah badan tank.
 - **Latihan vs komputer**: AI yang mengejar, memutar, menghindari rintangan & membidik dengan prediksi;
   3 tingkat kesulitan dan gelombang musuh yang makin kuat.
+- **Tank modern detail**: side skirt lapis baja, peluncur granat asap, senapan mesin jarak jauh (RWS),
+  periskop, keranjang turret, lampu depan, dan pantulan logam realistis.
+- **Suara kru** berbahasa Indonesia lewat interkom ("Peluru siap!", "Target hancur!", "Kerusakan parah!")
+  memakai suara bawaan browser; bisa dimatikan dengan tombol headset.
 - **Musik latar orisinal** (versi menu & pertempuran) + efek suara; masing-masing bisa dimatikan.
 
 ## 🎮 Kontrol
 
 | | HP | Laptop |
 | --- | --- | --- |
-| Bergerak | Geser sisi **kiri** layar | **WASD** / panah |
+| Bergerak | Geser sisi **kiri** layar (atas = maju, kiri/kanan = belok) | **W/S** maju/mundur, **A/D** belok (atau panah) |
 | Membidik | Geser sisi **kanan** layar (menembak otomatis) | **Mouse** |
 | Menembak | **Ketuk** sisi kanan (bidik otomatis ke musuh terdekat) | **Klik** / **Spasi** |
 | Menu | Tombol ⏸ | **Esc** |
@@ -68,6 +75,7 @@ dan menerima keadaan permainan 20× per detik. Karena itu:
 src/
   data/tanks.ts      ← daftar tank & statistiknya (tambah tank baru di sini)
   data/flags.ts      ← bendera negara (SVG)
+  data/maps.ts       ← tema peta: warna, langit, jumlah rintangan (tambah peta baru di sini)
   game/game.ts       ← simulasi: mode demo / latihan / host / pemain online, peluru, kerusakan, skor
   game/protocol.ts   ← format data online (snapshot & event)
   game/tank.ts       ← fisika tank
@@ -75,6 +83,7 @@ src/
   game/world.ts      ← peta (dibuat dari seed yang sama untuk semua pemain), tabrakan
   game/music.ts      ← musik latar orisinal (sequencer Web Audio)
   game/audio.ts      ← efek suara sintetis
+  game/crew.ts       ← suara kru (Web Speech API) & daftar kalimatnya
   game/input.ts      ← joystick sentuh, keyboard, mouse
   net/session.ts     ← room online (PeerJS): buat, gabung, kirim input & snapshot
   render/models.ts   ← model 3D tank & tekstur lingkungan

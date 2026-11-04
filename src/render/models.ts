@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import type { TankModel } from "../data/tanks";
 import { getTankSprites, SPRITE_SCALE } from "../game/sprites";
@@ -97,6 +98,107 @@ interface ModelParts {
   hullTop: THREE.Texture;
   turretTop: THREE.Texture;
   ts: number;
+  /** Perlengkapan tank modern (null untuk tank PD II), digabung per material agar hemat draw call */
+  modern: ModernKit | null;
+}
+
+interface ModernKit {
+  /** Pelat lapis baja penutup rantai (warna badan) */
+  skirts: THREE.BufferGeometry;
+  /** Kisi mesin, knalpot & periskop pengemudi (logam gelap) */
+  hullKit: THREE.BufferGeometry;
+  /** Senapan mesin jarak jauh, periskop, peluncur asap & keranjang belakang turret (logam gelap) */
+  turretKit: THREE.BufferGeometry;
+  /** Sabuk pelindung termal di laras */
+  barrelBands: THREE.BufferGeometry;
+  lights: THREE.BufferGeometry;
+}
+
+/** Posisi belakang turret per bentuk (kelipatan ts) */
+const TURRET_REAR: Record<TankModel["look"]["turret"], number> = { wedge: -0.5, long: -0.75, box: -0.55, dome: -0.5, cast: -0.61 };
+
+function box(w: number, h: number, d: number, x: number, y: number, z: number, rotY = 0) {
+  const g = new THREE.BoxGeometry(w, h, d);
+  if (rotY) g.rotateY(rotY);
+  return g.translate(x, y, z);
+}
+
+function rod(r: number, length: number, x: number, y: number, z: number) {
+  // Silinder memanjang searah sumbu x (depan tank)
+  return new THREE.CylinderGeometry(r, r, length, 10).rotateZ(-Math.PI / 2).translate(x, y, z);
+}
+
+function buildModernKit(model: TankModel, ts: number): ModernKit {
+  const { length: L, width: W, barrel: barrelLength, barrelWidth } = model.look;
+  const hullTopY = TRACK_H * 0.55 + HULL_H + 1.4;
+
+  // Side skirt: 5 panel per sisi dengan celah kecil, menutupi bagian atas roda
+  const skirts: THREE.BufferGeometry[] = [];
+  const panels = 5;
+  const span = L * 0.94;
+  const panelLength = span / panels - 0.7;
+  for (const s of [-1, 1]) {
+    for (let i = 0; i < panels; i++) {
+      const x = -span / 2 + (i + 0.5) * (span / panels);
+      skirts.push(box(panelLength, TRACK_H * 0.62, 1.4, x, TRACK_H * 0.72, s * (W / 2 + 1.9)));
+    }
+  }
+
+  const hull: THREE.BufferGeometry[] = [];
+  // Kisi mesin di dek belakang & knalpot di pelat belakang
+  const engineX = model.look.frontEngine ? L / 2 - L * 0.2 : -L / 2 + L * 0.17;
+  hull.push(box(L * 0.24, 0.7, W * 0.5, engineX, hullTopY + 0.3, 0));
+  for (let i = -2; i <= 2; i++) hull.push(box(L * 0.22, 0.6, 0.9, engineX, hullTopY + 0.9, i * W * 0.09));
+  hull.push(box(1.6, HULL_H * 0.4, W * 0.42, -L / 2 + 1.6, TRACK_H * 0.55 + HULL_H * 0.6, 0));
+  // Periskop pengemudi
+  for (let i = -1; i <= 1; i++) hull.push(box(2.2, 1.6, 2, L / 2 - 11, hullTopY + 0.8, i * 3));
+
+  const turret: THREE.BufferGeometry[] = [];
+  const top = TURRET_H + 1.6;
+  // Periskop panorama komandan (kepala bisa berputar)
+  turret.push(new THREE.CylinderGeometry(ts * 0.06, ts * 0.07, 4, 10).translate(-ts * 0.02, top + 2, ts * 0.24));
+  turret.push(box(ts * 0.14, 3.2, ts * 0.11, -ts * 0.02, top + 5, ts * 0.24));
+  // Kotak bidik penembak
+  turret.push(box(ts * 0.2, 4, ts * 0.13, ts * 0.24, top + 2, -ts * 0.27));
+  // Remote weapon station: dudukan, kotak amunisi & laras senapan mesin
+  const rwsX = -ts * 0.24;
+  const rwsZ = ts * 0.12;
+  turret.push(new THREE.CylinderGeometry(ts * 0.08, ts * 0.09, 2, 10).translate(rwsX, top + 1, rwsZ));
+  turret.push(box(ts * 0.17, 3.4, ts * 0.12, rwsX, top + 3.6, rwsZ));
+  turret.push(box(ts * 0.08, 2.4, ts * 0.06, rwsX - ts * 0.02, top + 3.4, rwsZ + ts * 0.1));
+  turret.push(rod(0.55, ts * 0.38, rwsX + ts * 0.26, top + 4, rwsZ - ts * 0.02));
+  // Peluncur granat asap: 3 tabung per sisi, mengarah ke depan-atas-luar
+  for (const s of [-1, 1]) {
+    for (let i = 0; i < 3; i++) {
+      const g = new THREE.CylinderGeometry(1.15, 1.15, 4.2, 8);
+      g.rotateZ(-0.95);
+      g.rotateX(s * 0.45);
+      turret.push(g.translate(-ts * 0.12 + i * 2.8, TURRET_H * 0.85, s * ts * 0.5));
+    }
+  }
+  // Keranjang barang di belakang turret: alas, dua sisi, dan pagar belakang
+  const rear = TURRET_REAR[model.look.turret] * ts;
+  const depth = 6.5;
+  const y = TURRET_H * 0.5;
+  turret.push(box(depth, 0.7, ts * 0.78, rear - depth / 2, y - 1.6, 0));
+  for (const s of [-1, 1]) turret.push(box(depth, 3.6, 0.6, rear - depth / 2, y, s * ts * 0.39));
+  turret.push(box(0.6, 3.6, ts * 0.78, rear - depth, y, 0));
+  turret.push(box(depth, 0.5, ts * 0.78, rear - depth / 2, y + 1.6, 0));
+
+  // Sabuk termal di laras (ruang laras: dari 0 sampai barrelLength di sumbu x)
+  const bands: THREE.BufferGeometry[] = [];
+  for (const t of [0.22, 0.34, 0.66, 0.8]) bands.push(rod(barrelWidth * 0.58, 2.2, barrelLength * t, 0, 0));
+
+  const lights: THREE.BufferGeometry[] = [];
+  for (const s of [-1, 1]) lights.push(box(1.2, 1.8, 3, L / 2 + 0.2, TRACK_H * 0.55 + HULL_H * 0.75, s * W * 0.3));
+
+  return {
+    skirts: mergeGeometries(skirts)!,
+    hullKit: mergeGeometries(hull)!,
+    turretKit: mergeGeometries(turret)!,
+    barrelBands: mergeGeometries(bands)!,
+    lights: mergeGeometries(lights)!,
+  };
 }
 
 const partsCache = new Map<string, ModelParts>();
@@ -128,7 +230,8 @@ function partsFor(model: TankModel): ModelParts {
   }
   const wheelGeo = mergeGeometries(wheels)!;
 
-  const parts = { hullGeo, turretGeo, wheelGeo, hullTop: topTexture(sprites.hull), turretTop: topTexture(sprites.turret), ts };
+  const modern = model.era === "modern" ? buildModernKit(model, ts) : null;
+  const parts = { hullGeo, turretGeo, wheelGeo, hullTop: topTexture(sprites.hull), turretTop: topTexture(sprites.turret), ts, modern };
   partsCache.set(model.id, parts);
   return parts;
 }
@@ -142,6 +245,8 @@ export interface TankRig {
   paint: THREE.MeshStandardMaterial[];
   baseColors: THREE.Color[];
   shield: THREE.Mesh;
+  /** Lampu depan (padam saat tank hancur) */
+  lights: THREE.MeshStandardMaterial | null;
   wrecked: boolean;
 }
 
@@ -155,17 +260,22 @@ export function buildTank(model: TankModel): TankRig {
   const hullSide = new THREE.MeshStandardMaterial({ color: side, roughness: 0.8, metalness: 0.25 });
   const turretTop = new THREE.MeshStandardMaterial({ map: parts.turretTop, roughness: 0.7, metalness: 0.3 });
   const turretSide = new THREE.MeshStandardMaterial({ color: base.clone().multiplyScalar(0.75), roughness: 0.75, metalness: 0.3 });
-  // Tank rahasia: meriam, roda & armor reaktif berlapis emas mengilap.
+  // Tank rahasia emas/perak: meriam, roda & armor reaktif berlapis logam mengilap (= look.colors[1]).
+  // Tank rahasia "hidden" sengaja tampil seperti tank biasa.
   // userData.glow = pendar dasar, ditambahkan renderer di atas kilatan saat terkena tembakan.
-  const steel = model.secret
+  const shiny = model.secret === "gold" || model.secret === "silver";
+  const steel = shiny
     ? new THREE.MeshStandardMaterial({ color: colors[1], roughness: 0.28, metalness: 0.9 })
     : new THREE.MeshStandardMaterial({ color: base.clone().multiplyScalar(0.55), roughness: 0.55, metalness: 0.5 });
-  if (model.secret) {
+  if (shiny) {
     steel.userData.glow = new THREE.Color(colors[1]).multiplyScalar(0.14);
     steel.emissive.copy(steel.userData.glow);
   }
   const rubber = new THREE.MeshStandardMaterial({ color: 0x2b2a26, roughness: 0.9, metalness: 0.1 });
-  const paint = [hullTop, hullSide, turretTop, turretSide, steel];
+  // Perlengkapan tank modern: logam gelap kebiruan
+  const gear = new THREE.MeshStandardMaterial({ color: base.clone().lerp(new THREE.Color(0x2a2e33), 0.65), roughness: 0.5, metalness: 0.6 });
+  const paint = [hullTop, hullSide, turretTop, turretSide, steel, gear];
+  const kit = parts.modern;
 
   const root = new THREE.Group();
 
@@ -195,6 +305,16 @@ export function buildTank(model: TankModel): TankRig {
   hull.receiveShadow = true;
   root.add(hull);
 
+  let lights: THREE.MeshStandardMaterial | null = null;
+  if (kit) {
+    const skirts = new THREE.Mesh(kit.skirts, hullSide);
+    skirts.castShadow = true;
+    const hullKit = new THREE.Mesh(kit.hullKit, gear);
+    hullKit.castShadow = true;
+    lights = new THREE.MeshStandardMaterial({ color: 0xfff3c4, emissive: 0xffe2a0, emissiveIntensity: 1.2, roughness: 0.3 });
+    root.add(skirts, hullKit, new THREE.Mesh(kit.lights, lights));
+  }
+
   // Turret
   const turret = new THREE.Group();
   turret.position.set(turretOffset, TRACK_H * 0.55 + HULL_H + 1.4, 0);
@@ -221,7 +341,13 @@ export function buildTank(model: TankModel): TankRig {
     brake.position.x = barrelLength - 2;
     barrel.add(brake);
   }
+  if (kit) barrel.add(new THREE.Mesh(kit.barrelBands, steel));
   turret.add(barrel);
+  if (kit) {
+    const turretKit = new THREE.Mesh(kit.turretKit, gear);
+    turretKit.castShadow = true;
+    turret.add(turretKit);
+  }
 
   const hatch = new THREE.Mesh(new THREE.CylinderGeometry(parts.ts * 0.13, parts.ts * 0.13, 2, 14), steel);
   hatch.position.set(-parts.ts * 0.18, TURRET_H + 2, -parts.ts * 0.18);
@@ -248,7 +374,7 @@ export function buildTank(model: TankModel): TankRig {
   shield.visible = false;
   root.add(shield);
 
-  return { root, turret, barrel, treads, paint, baseColors: paint.map((m) => m.color.clone()), shield, wrecked: false };
+  return { root, turret, barrel, treads, paint, baseColors: paint.map((m) => m.color.clone()), shield, lights, wrecked: false };
 }
 
 export function setWrecked(rig: TankRig, wrecked: boolean) {
@@ -258,12 +384,46 @@ export function setWrecked(rig: TankRig, wrecked: boolean) {
     if (wrecked) m.color.setRGB(0.16, 0.13, 0.11);
     else m.color.copy(rig.baseColors[i]);
   });
+  if (rig.lights) rig.lights.emissiveIntensity = wrecked ? 0 : 1.2;
+}
+
+/**
+ * Pantulan lingkungan agar logam & cat terlihat lebih realistis.
+ * env harus dibuat oleh renderer yang sama yang menggambar rig ini.
+ */
+export function applyEnvironment(rig: TankRig, env: THREE.Texture) {
+  rig.root.traverse((o) => {
+    if (!(o instanceof THREE.Mesh) || o === rig.shield) return;
+    for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
+      if (!(m instanceof THREE.MeshStandardMaterial)) continue;
+      m.envMap = env;
+      m.envMapIntensity = m.metalness > 0.8 ? 1 : 0.45;
+    }
+  });
+}
+
+/** Environment map studio lembut untuk pantulan tank, dibuat sekali per renderer */
+export function createTankEnvironment(gl: THREE.WebGLRenderer) {
+  const pmrem = new THREE.PMREMGenerator(gl);
+  const env = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  pmrem.dispose();
+  return env;
 }
 
 /** Lepas memori GPU milik rig (geometri bersama per model tetap disimpan) */
 export function disposeTankRig(rig: TankRig, model: TankModel) {
   const parts = partsCache.get(model.id);
-  const shared = new Set<THREE.BufferGeometry | undefined>([parts?.hullGeo, parts?.turretGeo, parts?.wheelGeo]);
+  const kit = parts?.modern;
+  const shared = new Set<THREE.BufferGeometry | undefined>([
+    parts?.hullGeo,
+    parts?.turretGeo,
+    parts?.wheelGeo,
+    kit?.skirts,
+    kit?.hullKit,
+    kit?.turretKit,
+    kit?.barrelBands,
+    kit?.lights,
+  ]);
   const materials = new Set<THREE.Material>();
   rig.root.traverse((o) => {
     if (!(o instanceof THREE.Mesh)) return;

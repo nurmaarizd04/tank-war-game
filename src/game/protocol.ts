@@ -2,7 +2,8 @@
 export type GameEvent =
   | { k: "fire"; id: string; x: number; y: number; a: number }
   | { k: "imp"; x: number; y: number; m: 0 | 1 }
-  | { k: "dmg"; id: string; n: number; c: 0 | 1 }
+  /** a = id penembak (opsional, untuk konfirmasi tembakan kena) */
+  | { k: "dmg"; id: string; n: number; c: 0 | 1; a?: string }
   | { k: "boom"; x: number; y: number; s: number }
   | { k: "obs"; i: number }
   | { k: "kill"; a: string | null; v: string }
@@ -38,6 +39,8 @@ export interface VersusSettings {
   killLimit: number;
   /** Detik */
   timeLimit: number;
+  /** Id peta (lihat data/maps.ts); kosong = Padang Rumput */
+  map?: string;
 }
 
 export interface ScoreRow {

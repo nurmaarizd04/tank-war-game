@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { tankById, type TankModel } from "../data/tanks";
-import { buildTank, disposeTankRig, type TankRig } from "./models";
+import { applyEnvironment, buildTank, createTankEnvironment, disposeTankRig, type TankRig } from "./models";
 
 /** Pratinjau tank 3D yang berputar di garasi */
 export class TankPreview {
@@ -13,6 +13,7 @@ export class TankPreview {
   private frame = 0;
   private last = 0;
   private spin = -0.6;
+  private env: THREE.Texture | null = null;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -46,6 +47,8 @@ export class TankPreview {
     }
     this.modelId = model.id;
     this.rig = buildTank(model);
+    this.env ??= createTankEnvironment(this.gl);
+    applyEnvironment(this.rig, this.env);
     this.rig.root.traverse((o) => (o.castShadow = true));
     this.scene.add(this.rig.root);
     const size = model.look.length + model.look.barrel;

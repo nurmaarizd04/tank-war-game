@@ -63,7 +63,7 @@ export class HostSession {
   readonly code: string;
   readonly localId = "host";
   players: LobbyPlayer[];
-  settings: VersusSettings = { killLimit: 10, timeLimit: 300 };
+  settings: VersusSettings = { killLimit: 10, timeLimit: 300, map: "padang" };
   inMatch = false;
   onLobby: (players: LobbyPlayer[]) => void = () => {};
   onInput: (id: string, ctrl: Controls) => void = () => {};
@@ -193,7 +193,7 @@ export class ClientSession {
   readonly code: string;
   localId = "";
   players: LobbyPlayer[] = [];
-  settings: VersusSettings = { killLimit: 10, timeLimit: 300 };
+  settings: VersusSettings = { killLimit: 10, timeLimit: 300, map: "padang" };
   onLobby: (players: LobbyPlayer[], settings: VersusSettings) => void = () => {};
   onStart: (seed: number, players: VersusPlayer[], settings: VersusSettings) => void = () => {};
   onSnapshot: (s: Snapshot) => void = () => {};

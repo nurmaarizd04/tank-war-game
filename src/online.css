@@ -587,3 +587,27 @@ input:focus {
   color: #2a1d05;
   font-weight: 700;
 }
+
+/* Tingkat perak (di bawah emas) */
+.tank-card.secret-silver {
+  background:
+    linear-gradient(140deg, rgba(201, 206, 214, 0.2), transparent 55%),
+    var(--panel);
+  border-color: rgba(201, 206, 214, 0.5);
+}
+
+.tank-card.secret-silver .card-name {
+  color: #e3e7ee;
+}
+
+.tank-card.secret-silver.selected {
+  border-color: #e3e7ee;
+  box-shadow:
+    0 0 0 1px #e3e7ee,
+    0 6px 24px rgba(227, 231, 238, 0.3);
+}
+
+.tank-card.secret-silver .secret-badge {
+  background: linear-gradient(135deg, #f1f3f6, #8e96a3);
+  color: #1c2027;
+}

@@ -2,15 +2,19 @@ import * as THREE from "three";
 import { tankById } from "../data/tanks";
 import type { Particle } from "../game/effects";
 import type { Game } from "../game/game";
-import { clamp, smoothing } from "../game/math";
+import { angleDiff, clamp, lerp, smoothing } from "../game/math";
 import type { Tank } from "../game/tank";
 import type { Obstacle, World } from "../game/world";
-import { buildTank, disposeTankRig, setWrecked, textures, TRACK_H, type TankRig } from "./models";
+import { applyEnvironment, buildTank, createTankEnvironment, disposeTankRig, setWrecked, textures, TRACK_H, type TankRig } from "./models";
 
 const MOBILE = typeof matchMedia !== "undefined" && matchMedia("(pointer: coarse)").matches;
 const ROOF_COLORS = [0x8a4b3a, 0x6d6a63, 0x7b5a41, 0x5d6670, 0x94785a];
 const FOV = 40;
 const TILT = (55 * Math.PI) / 180;
+/** Kamera dari belakang tank: jarak ke belakang, tinggi, titik pandang di depan tank */
+const CHASE = { fov: 58, back: 200, height: 105, ahead: 170, lookHeight: 18 };
+/** Saat gedung menghalangi: kamera naik & mendekat (lebih menunduk) */
+const CHASE_LIFTED = { back: 110, height: 250 };
 
 // ---------------- Partikel (satu draw call per lapisan) ----------------
 
@@ -114,6 +118,12 @@ export class Renderer {
   private targetX = 1200;
   private targetY = 800;
   private followRate = 5;
+  /** Kamera dari belakang tank pemain (false = pandangan atas untuk demo/menu) */
+  private chaseOn = false;
+  private chaseAngle = 0;
+  /** Arah dunia yang menghadap ke atas layar (−π/2 = pandangan atas biasa) */
+  private yaw = -Math.PI / 2;
+  private lift = 0;
   private shakeAmount = 0;
   private cssW = 0;
   private cssH = 0;
@@ -132,6 +142,9 @@ export class Renderer {
     barrel: new THREE.MeshStandardMaterial({ map: textures.barrel(), roughness: 0.6, metalness: 0.3 }),
   };
   private readonly facade = textures.facade();
+  private readonly hemi = new THREE.HemisphereLight(0xe4efff, 0x46552c, 1.25);
+  /** Pantulan untuk cat & logam tank */
+  private tankEnv: THREE.Texture | null = null;
 
   constructor(canvas: HTMLCanvasElement, overlay: HTMLCanvasElement) {
     this.gl = new THREE.WebGLRenderer({ canvas, antialias: !MOBILE || window.devicePixelRatio < 2, powerPreference: "high-performance" });
@@ -145,7 +158,7 @@ export class Renderer {
 
     this.scene.background = new THREE.Color(0x7d8f6a);
     this.scene.fog = new THREE.Fog(0x7d8f6a, 1500, 3400);
-    this.scene.add(new THREE.HemisphereLight(0xe4efff, 0x46552c, 1.25));
+    this.scene.add(this.hemi);
     this.sun = new THREE.DirectionalLight(0xfff0d4, 2.6);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(MOBILE ? 1024 : 2048, MOBILE ? 1024 : 2048);
@@ -213,14 +226,31 @@ export class Renderer {
     this.camera.updateProjectionMatrix();
     this.overlay.width = Math.round(this.cssW * this.dpr);
     this.overlay.height = Math.round(this.cssH * this.dpr);
-    const scale = (this.cssH * this.dpr) / (2 * Math.tan(((FOV / 2) * Math.PI) / 180));
+    this.updateParticleScale();
+  }
+
+  private updateParticleScale() {
+    const scale = (this.cssH * this.dpr) / (2 * Math.tan(((this.camera.fov / 2) * Math.PI) / 180));
     this.smoke.material.uniforms.uScale.value = scale;
     this.glow.material.uniforms.uScale.value = scale;
   }
 
+  /** Ganti FOV & jarak kabut sesuai mode kamera */
+  private applyCameraMode() {
+    this.camera.fov = this.chaseOn ? CHASE.fov : FOV;
+    this.camera.updateProjectionMatrix();
+    this.updateParticleScale();
+    const fog = this.scene.fog as THREE.Fog;
+    fog.near = this.chaseOn ? 700 : 1500;
+    fog.far = this.chaseOn ? 2600 : 3400;
+  }
+
   // ---------------- Kamera ----------------
 
+  /** Pandangan atas yang mengikuti titik (demo / menu) */
   focus(x: number, y: number, snap = false, rate = 5) {
+    this.chaseOn = false;
+    this.yaw = -Math.PI / 2;
     this.targetX = x;
     this.targetY = y;
     this.followRate = rate;
@@ -228,6 +258,25 @@ export class Renderer {
       this.focusX = x;
       this.focusY = y;
     }
+  }
+
+  /** Kamera dari belakang tank, berputar mengikuti arah badan tank */
+  chase(x: number, y: number, angle: number, snap = false) {
+    this.chaseOn = true;
+    this.chaseAngle = angle;
+    this.focusX = this.targetX = x;
+    this.focusY = this.targetY = y;
+    if (snap) {
+      this.yaw = angle;
+      this.lift = 0;
+    }
+  }
+
+  /** Ubah arah di layar (x kanan, y bawah) menjadi arah di dunia sesuai putaran kamera */
+  viewToWorld(x: number, y: number) {
+    const fx = Math.cos(this.yaw);
+    const fy = Math.sin(this.yaw);
+    return { x: -fy * x - fx * y, y: fx * x - fy * y };
   }
 
   get focusPoint() {
@@ -244,6 +293,11 @@ export class Renderer {
   }
 
   private updateCamera(dt: number) {
+    if (this.camera.fov !== (this.chaseOn ? CHASE.fov : FOV)) this.applyCameraMode();
+    if (this.chaseOn) {
+      this.updateChaseCamera(dt);
+      return;
+    }
     const W = this.world?.width ?? 2400;
     const H = this.world?.height ?? 1600;
     const k = smoothing(this.followRate, dt);
@@ -264,11 +318,51 @@ export class Renderer {
     this.sun.target.position.set(fx, 0, fz);
   }
 
-  screenToGround(sx: number, sy: number) {
+  private updateChaseCamera(dt: number) {
+    const W = this.world?.width ?? 2400;
+    const H = this.world?.height ?? 1600;
+    this.yaw += angleDiff(this.yaw, this.chaseAngle) * smoothing(3.5, dt);
+    this.lift += ((this.chaseBlocked() ? 1 : 0) - this.lift) * smoothing(4, dt);
+    const back = lerp(CHASE.back, CHASE_LIFTED.back, this.lift);
+    const height = lerp(CHASE.height, CHASE_LIFTED.height, this.lift);
+    const fx = Math.cos(this.yaw);
+    const fy = Math.sin(this.yaw);
+    const tx = this.focusX - W / 2;
+    const tz = this.focusY - H / 2;
+    const sx = this.shakeAmount > 0.3 ? (Math.random() - 0.5) * this.shakeAmount : 0;
+    const sy = this.shakeAmount > 0.3 ? (Math.random() - 0.5) * this.shakeAmount * 0.5 : 0;
+    this.shakeAmount *= Math.exp(-dt * 9);
+    this.camera.position.set(tx - fx * back + sx, height + sy, tz - fy * back);
+    this.camera.lookAt(tx + fx * CHASE.ahead + sx, CHASE.lookHeight + sy, tz + fy * CHASE.ahead);
+    // Bayangan dipusatkan di depan tank, area yang paling banyak terlihat
+    const ax = tx + fx * 380;
+    const az = tz + fy * 380;
+    this.sun.position.set(ax - 380, 700, az + 260);
+    this.sun.target.position.set(ax, 0, az);
+  }
+
+  /** Ada gedung di antara tank dan kamera (bagian garis pandang yang lebih rendah dari atap) */
+  private chaseBlocked() {
+    if (!this.world) return false;
+    const fx = Math.cos(this.yaw);
+    const fy = Math.sin(this.yaw);
+    for (let t = 0.15; t <= 0.65; t += 0.1) {
+      const o = this.world.pointBlocked(this.focusX - fx * CHASE.back * t, this.focusY - fy * CHASE.back * t);
+      if (o?.kind === "building") return true;
+    }
+    return false;
+  }
+
+  /** Titik di tanah di bawah posisi layar. far = bila mengarah ke langit, pakai titik jauh searah pandangan */
+  screenToGround(sx: number, sy: number, far = false) {
     if (!this.world) return null;
     this.raycaster.setFromCamera(new THREE.Vector2((sx / this.cssW) * 2 - 1, -(sy / this.cssH) * 2 + 1), this.camera);
-    const hit = this.raycaster.ray.intersectPlane(this.groundPlane, this.vec);
-    return hit ? { x: hit.x + this.world.width / 2, y: hit.z + this.world.height / 2 } : null;
+    const ray = this.raycaster.ray;
+    const hit = ray.intersectPlane(this.groundPlane, this.vec);
+    if (hit) return { x: hit.x + this.world.width / 2, y: hit.z + this.world.height / 2 };
+    if (!far) return null;
+    const d = Math.hypot(ray.direction.x, ray.direction.z) || 1;
+    return { x: ray.origin.x + (ray.direction.x / d) * 3000 + this.world.width / 2, y: ray.origin.z + (ray.direction.z / d) * 3000 + this.world.height / 2 };
   }
 
   private project(x: number, height: number, y: number) {
@@ -308,6 +402,12 @@ export class Renderer {
   private buildEnvironment(world: World) {
     const W = world.width;
     const H = world.height;
+    const theme = world.theme;
+    (this.scene.background as THREE.Color).set(theme.sky);
+    this.scene.fog!.color.set(theme.sky);
+    this.hemi.groundColor.set(theme.bounce);
+    this.mats.rock.color.set(theme.rock);
+    const roofColors = theme.roofs ?? ROOF_COLORS;
 
     const groundTex = new THREE.CanvasTexture(world.ground);
     groundTex.colorSpace = THREE.SRGBColorSpace;
@@ -316,7 +416,7 @@ export class Renderer {
     ground.receiveShadow = true;
     this.env.add(ground);
 
-    const outside = new THREE.Mesh(new THREE.PlaneGeometry(9000, 9000).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x4a6332, roughness: 1 }));
+    const outside = new THREE.Mesh(new THREE.PlaneGeometry(9000, 9000).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: theme.outside, roughness: 1 }));
     outside.position.y = -0.5;
     outside.receiveShadow = true;
     this.env.add(outside);
@@ -362,7 +462,7 @@ export class Renderer {
         const roofGeo = new THREE.ExtrudeGeometry(tri, { depth: length, bevelEnabled: false });
         roofGeo.translate(0, 0, -length / 2);
         if (alongX) roofGeo.rotateY(Math.PI / 2);
-        const roof = new THREE.Mesh(roofGeo, new THREE.MeshStandardMaterial({ color: ROOF_COLORS[Math.floor(o.tint * ROOF_COLORS.length)], roughness: 0.85, flatShading: true }));
+        const roof = new THREE.Mesh(roofGeo, new THREE.MeshStandardMaterial({ color: roofColors[Math.floor(o.tint * roofColors.length)], roughness: 0.85, flatShading: true }));
         roof.position.set(x, height, z);
         roof.castShadow = true;
         this.env.add(roof);
@@ -390,7 +490,8 @@ export class Renderer {
     trees.forEach((o, i) => {
       const x = o.x - W / 2;
       const z = o.y - H / 2;
-      const color = new THREE.Color().setHSL((100 + o.tint * 30) / 360, 0.55, 0.17 + o.tint * 0.06);
+      const { hue, sat, light } = theme.leaves;
+      const color = new THREE.Color().setHSL(lerp(hue[0], hue[1], o.tint) / 360, sat, lerp(light[0], light[1], o.tint));
       const s = o.r * 1.1;
       this.setInstance(trunk, i, x, 0, z, 1, 1, 1, o.tint * 6);
       this.setInstance(low, i, x, 16, z, s, s, s, o.tint * 6);
@@ -534,6 +635,8 @@ export class Renderer {
           disposeTankRig(entry.rig, tankById(entry.modelId));
         }
         entry = { rig: buildTank(t.model), modelId: t.model.id };
+        this.tankEnv ??= createTankEnvironment(this.gl);
+        applyEnvironment(entry.rig, this.tankEnv);
         this.rigs.set(t.id, entry);
         this.scene.add(entry.rig.root);
       }
@@ -774,7 +877,16 @@ export class Renderer {
       if (!t.alive) continue;
       ctx.fillStyle = t === game.local ? "#46d36b" : "#ef4b4b";
       ctx.beginPath();
-      ctx.arc(mx + t.x * k, my + t.y * k, t === game.local ? 3.5 : 3, 0, Math.PI * 2);
+      if (t === game.local) {
+        // Panah arah hadap tank pemain
+        const a = t.angle;
+        const px = mx + t.x * k;
+        const py = my + t.y * k;
+        ctx.moveTo(px + Math.cos(a) * 6, py + Math.sin(a) * 6);
+        ctx.lineTo(px + Math.cos(a + 2.5) * 4.5, py + Math.sin(a + 2.5) * 4.5);
+        ctx.lineTo(px + Math.cos(a - 2.5) * 4.5, py + Math.sin(a - 2.5) * 4.5);
+        ctx.closePath();
+      } else ctx.arc(mx + t.x * k, my + t.y * k, 3, 0, Math.PI * 2);
       ctx.fill();
     }
   }
