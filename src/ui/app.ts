@@ -1,12 +1,12 @@
 import { flagSvg } from "../data/flags";
 import { MAPS, mapById } from "../data/maps";
-import { STANDARD_TANKS, TANKS, secretTankForCode, tankById, tankRatings, type TankModel } from "../data/tanks";
+import { shownModel, STANDARD_TANKS, TANKS, secretTankForCode, tankById, tankRatings, type TankModel } from "../data/tanks";
 import { DIFFICULTIES, type Difficulty, type DifficultyId } from "../game/ai";
 import { sound } from "../game/audio";
 import { crew } from "../game/crew";
 import type { Game, GameResult, HudState } from "../game/game";
 import { music } from "../game/music";
-import type { ScoreRow, VersusSettings } from "../game/protocol";
+import { TEAMS, teamTotals, type ScoreRow, type VersusSettings } from "../game/protocol";
 import { drawTankPreview } from "../game/sprites";
 import { ClientSession, HostSession, MAX_PLAYERS, normalizeCode, type LobbyPlayer } from "../net/session";
 import { TankPreview } from "../render/preview";
@@ -230,6 +230,7 @@ export class App {
         <div class="lobby-players">
           <div class="lobby-count" id="lobby-count"></div>
           <ul id="lobby-list"></ul>
+          <button class="btn btn-small" id="btn-switch-team" data-action="switch-team" hidden>Pindah Tim</button>
         </div>
         <aside class="lobby-side">
           <div class="lobby-mytank">
@@ -241,6 +242,10 @@ export class App {
             </div>
           </div>
           <div class="lobby-settings" id="lobby-settings">
+            <div class="setting">
+              <span>Mode</span>
+              <div class="segmented"><button data-teams="0">Bebas</button><button data-teams="1">Tim Merah vs Biru</button></div>
+            </div>
             <div class="setting">
               <span>Target hancurkan</span>
               <div class="segmented">${KILL_OPTIONS.map((k) => `<button data-kill="${k}">${k}</button>`).join("")}</div>
@@ -347,13 +352,14 @@ export class App {
             <ul>
               <li>Satu orang <b>Buat Room</b> lalu bagikan kodenya.</li>
               <li>Teman pilih <b>Gabung</b> dan masukkan kode (beda Wi-Fi pun bisa).</li>
+              <li>Host bisa pilih mode <b>Bebas</b> (semua lawan semua) atau <b>Tim Merah vs Biru</b> — kawan setim tidak bisa saling melukai.</li>
               <li>Tank yang hancur <b>muncul lagi</b> dengan perisai sesaat.</li>
             </ul>
           </section>
           <section>
             <h4>🎯 Taktik & Item</h4>
             <ul>
-              <li>Tembak <b>belakang</b> tank lawan = <b>KRITIS</b> (+40%).</li>
+              <li>Tembak <b>belakang</b> tank lawan = <b>KRITIS</b> (+40%). Armor <b>depan</b> paling tebal (−20%), jadi hadapkan muka tank ke musuh.</li>
               <li>Tembak <b>tong merah</b> di dekat lawan untuk ledakan besar.</li>
               <li><b style="color:#3ddc84">Kotak hijau</b>: +35% HP · <b style="color:#ffc233">Kristal kuning</b>: tembak cepat.</li>
             </ul>
@@ -444,8 +450,9 @@ export class App {
       const kill = target.closest<HTMLElement>("[data-kill]")?.dataset.kill;
       const time = target.closest<HTMLElement>("[data-time]")?.dataset.time;
       const map = target.closest<HTMLElement>("[data-map]")?.dataset.map;
+      const teams = target.closest<HTMLElement>("[data-teams]")?.dataset.teams;
       const soloMap = target.closest<HTMLElement>("[data-solo-map]")?.dataset.soloMap;
-      if (action || card || filter || difficulty || kill || time || map || soloMap) {
+      if (action || card || filter || difficulty || kill || time || map || teams || soloMap) {
         sound.unlock();
         crew.unlock();
         sound.click();
@@ -456,6 +463,7 @@ export class App {
       if (kill && this.host) this.host.setSettings({ ...this.host.settings, killLimit: Number(kill) });
       if (time && this.host) this.host.setSettings({ ...this.host.settings, timeLimit: Number(time) });
       if (map && this.host) this.host.setSettings({ ...this.host.settings, map });
+      if (teams && this.host) this.host.setSettings({ ...this.host.settings, teams: teams === "1" });
       if (soloMap) this.selectSoloMap(soloMap);
       if (action) this.handleAction(action);
     });
@@ -544,6 +552,9 @@ export class App {
         break;
       case "rematch":
         this.startMatch();
+        break;
+      case "switch-team":
+        this.switchTeam();
         break;
       case "to-lobby":
         this.host?.backToLobby();
@@ -815,17 +826,26 @@ export class App {
     const players = this.lobbyPlayers;
     const settings = this.lobbySettings;
     this.$("#lobby-code").textContent = session.code;
-    this.$("#lobby-count").textContent = `${players.length} / ${MAX_PLAYERS} pemain`;
-    this.$("#lobby-list").innerHTML = players
+    const teams = !!settings.teams;
+    const red = players.filter((p) => p.team === 0).length;
+    this.$("#lobby-count").textContent = teams
+      ? `${players.length} / ${MAX_PLAYERS} pemain · ${TEAMS[0].name} ${red} – ${players.length - red} ${TEAMS[1].name}`
+      : `${players.length} / ${MAX_PLAYERS} pemain`;
+    // Mode tim: pemain dikelompokkan per tim, dengan garis warna regu
+    const list = teams ? [...players].sort((a, b) => a.team - b.team) : players;
+    this.$("#lobby-list").innerHTML = list
       .map((p) => {
         const model = tankById(p.tank);
-        return `<li class="${p.id === localId ? "me" : ""}">
+        const team = teams ? ` style="box-shadow: inset 4px 0 0 ${TEAMS[p.team].color}"` : "";
+        return `<li class="${p.id === localId ? "me" : ""}"${team}>
           ${flagSvg(model.flag)}
           <div><b>${escapeHtml(p.name)}</b><span>${model.name}</span></div>
+          ${teams ? `<em class="badge" style="background:${TEAMS[p.team].color};color:#10141a">${TEAMS[p.team].name.toUpperCase()}</em>` : ""}
           ${p.host ? `<em class="badge host">HOST</em>` : ""}${p.id === localId ? `<em class="badge">KAMU</em>` : ""}
         </li>`;
       })
       .join("");
+    this.$("#btn-switch-team").hidden = !teams;
     this.$("#lobby-tank-name").innerHTML = `${flagSvg(this.tank.flag)} ${this.tank.name}`;
     const canvas = this.$<HTMLCanvasElement>("#lobby-tank-canvas");
     fitCanvas(canvas);
@@ -836,17 +856,32 @@ export class App {
     for (const b of this.root.querySelectorAll<HTMLElement>("[data-kill]")) b.classList.toggle("active", Number(b.dataset.kill) === settings.killLimit);
     for (const b of this.root.querySelectorAll<HTMLElement>("[data-time]")) b.classList.toggle("active", Number(b.dataset.time) === settings.timeLimit);
     for (const b of this.root.querySelectorAll<HTMLElement>("[data-map]")) b.classList.toggle("active", b.dataset.map === mapById(settings.map).id);
+    for (const b of this.root.querySelectorAll<HTMLElement>("[data-teams]")) b.classList.toggle("active", (b.dataset.teams === "1") === teams);
+    const problem = this.lobbyProblem(players, settings);
     const start = this.$<HTMLButtonElement>("#btn-start");
     start.hidden = !isHost;
-    start.disabled = players.length < 2;
+    start.disabled = !!problem;
     this.setStatus(
       "#lobby-status",
-      isHost
-        ? players.length < 2
-          ? "Bagikan kode room ke teman. Butuh minimal 2 pemain."
-          : `${players.length} pemain siap. Mulai kapan saja!`
-        : "Menunggu host memulai pertempuran…",
+      isHost ? (problem ?? `${players.length} pemain siap. Mulai kapan saja!`) : "Menunggu host memulai pertempuran…",
     );
+  }
+
+  /** Alasan pertandingan belum bisa dimulai, atau null bila siap */
+  private lobbyProblem(players: LobbyPlayer[], settings: VersusSettings) {
+    if (players.length < 2) return "Bagikan kode room ke teman. Butuh minimal 2 pemain.";
+    if (settings.teams && (players.every((p) => p.team === 0) || players.every((p) => p.team === 1))) {
+      return "Semua pemain ada di satu tim. Minta satu orang tekan Pindah Tim.";
+    }
+    return null;
+  }
+
+  private switchTeam() {
+    const me = this.lobbyPlayers.find((p) => p.id === (this.host?.localId ?? this.client?.localId));
+    if (!me) return;
+    const team = me.team === 0 ? 1 : 0;
+    if (this.host) this.host.setLocalTeam(team);
+    else this.client?.setTeam(team);
   }
 
   private async copyInvite(share: boolean) {
@@ -873,8 +908,9 @@ export class App {
   private startMatch() {
     const host = this.host;
     if (!host) return;
-    if (host.players.length < 2) {
-      this.setStatus("#lobby-status", "Butuh minimal 2 pemain untuk memulai.", true);
+    const problem = this.lobbyProblem(host.players, host.settings);
+    if (problem) {
+      this.setStatus("#lobby-status", problem, true);
       if (this.screen !== "lobby") this.show("lobby");
       return;
     }
@@ -952,7 +988,7 @@ export class App {
   }
 
   private renderDetail() {
-    const t = this.tank;
+    const t = shownModel(this.tank);
     const r = tankRatings(t);
     this.$("#detail-name").textContent = t.name;
     this.$("#detail-origin").innerHTML = `${flagSvg(t.flag)} ${t.country} · ${t.year} · ${t.era === "ww2" ? "Perang Dunia II" : "Modern"}`;
@@ -993,13 +1029,24 @@ export class App {
     if (s.versus) {
       const rank = s.board.findIndex((r) => r.local) + 1;
       this.$("#hud-wave").textContent = `⏱ ${formatTime(s.timeLeft)}`;
-      this.$("#hud-score").textContent = `${s.kills} / ${s.killLimit}`;
-      this.$("#hud-enemies").textContent = rank ? `Peringkat ${rank} dari ${s.board.length}` : "";
-      const top = s.board.slice(0, 3);
       const me = s.board.find((r) => r.local);
+      if (s.teams && me) {
+        // Skor tim kamu lebih dulu, lalu skor tim lawan
+        const totals = teamTotals(s.board);
+        const mine = me.team;
+        this.$("#hud-score").innerHTML = `<span style="color:${TEAMS[mine].color}">${totals[mine]}</span> – <span style="color:${TEAMS[1 - mine].color}">${totals[1 - mine]}</span>`;
+        this.$("#hud-enemies").textContent = `Tim ${TEAMS[mine].name} · target ${s.killLimit}`;
+      } else {
+        this.$("#hud-score").textContent = `${s.kills} / ${s.killLimit}`;
+        this.$("#hud-enemies").textContent = rank ? `Peringkat ${rank} dari ${s.board.length}` : "";
+      }
+      const top = s.board.slice(0, 3);
       if (me && !top.includes(me)) top.push(me);
       this.$("#hud-board").innerHTML = top
-        .map((r) => `<li class="${r.local ? "me" : ""}"><span>${s.board.indexOf(r) + 1}</span><b>${escapeHtml(r.name)}</b><em>${r.kills}</em></li>`)
+        .map((r) => {
+          const team = s.teams ? ` style="color:${TEAMS[r.team].color}"` : "";
+          return `<li class="${r.local ? "me" : ""}"><span>${s.board.indexOf(r) + 1}</span><b${team}>${escapeHtml(r.name)}</b><em>${r.kills}</em></li>`;
+        })
         .join("");
       const respawn = this.$("#respawn");
       respawn.classList.toggle("show", !s.alive);
@@ -1042,14 +1089,26 @@ export class App {
   }
 
   showMatchEnd(rows: ScoreRow[]) {
-    const winner = rows[0];
     const me = rows.find((r) => r.local);
-    this.$("#results-title").textContent = winner?.local ? "🏆 Kamu Menang!" : "Pertandingan Selesai";
-    this.$("#results-sub").textContent = winner ? `${winner.local ? "Selamat!" : `Pemenang: ${winner.name}`} · ${winner.kills} tank dihancurkan` : "";
+    if (this.lobbySettings.teams) {
+      const totals = teamTotals(rows);
+      const win = totals[0] === totals[1] ? null : totals[0] > totals[1] ? 0 : 1;
+      this.$("#results-title").textContent = win === null ? "Seri!" : me?.team === win ? "🏆 Tim Kamu Menang!" : `Tim ${TEAMS[win].name} Menang`;
+      this.$("#results-sub").textContent = `${TEAMS[0].name} ${totals[0]} – ${totals[1]} ${TEAMS[1].name}`;
+      // Pemenang di atas, lalu urut skor di dalam tiap tim
+      const first = win ?? 0;
+      rows = [...rows].sort((a, b) => Number(a.team !== first) - Number(b.team !== first) || b.kills - a.kills || a.deaths - b.deaths);
+    } else {
+      const winner = rows[0];
+      this.$("#results-title").textContent = winner?.local ? "🏆 Kamu Menang!" : "Pertandingan Selesai";
+      this.$("#results-sub").textContent = winner ? `${winner.local ? "Selamat!" : `Pemenang: ${winner.name}`} · ${winner.kills} tank dihancurkan` : "";
+    }
+    const teams = !!this.lobbySettings.teams;
     this.$("#results-body").innerHTML = rows
       .map((r, i) => {
         const model = tankById(r.tank);
-        return `<tr class="${r.local ? "me" : ""}"><td>${i === 0 ? "👑" : i + 1}</td><td><div class="who">${flagSvg(model.flag)}<b>${escapeHtml(r.name)}</b><span>${model.name}</span></div></td><td>${r.kills}</td><td>${r.deaths}</td></tr>`;
+        const rank = teams ? `<i style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${TEAMS[r.team].color}"></i>` : i === 0 ? "👑" : i + 1;
+        return `<tr class="${r.local ? "me" : ""}"><td>${rank}</td><td><div class="who">${flagSvg(model.flag)}<b>${escapeHtml(r.name)}</b><span>${model.name}</span></div></td><td>${r.kills}</td><td>${r.deaths}</td></tr>`;
       })
       .join("");
     this.$("#results-actions").innerHTML = this.host

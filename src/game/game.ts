@@ -1,5 +1,5 @@
 import { MAPS } from "../data/maps";
-import { STANDARD_TANKS, tankById, type TankModel } from "../data/tanks";
+import { shownModel, STANDARD_TANKS, tankById, type TankModel } from "../data/tanks";
 import { Renderer } from "../render/renderer";
 import { AIController, DIFFICULTIES, type Difficulty } from "./ai";
 import { sound } from "./audio";
@@ -7,7 +7,7 @@ import { crew } from "./crew";
 import { Effects } from "./effects";
 import { Input } from "./input";
 import { angleDiff, clamp, pick, rand, smoothing } from "./math";
-import { round, type GameEvent, type ScoreRow, type Snapshot, type TankState, type VersusPlayer, type VersusSettings } from "./protocol";
+import { round, TEAMS, teamTotals, type GameEvent, type ScoreRow, type Snapshot, type TankState, type VersusPlayer, type VersusSettings } from "./protocol";
 import { Tank } from "./tank";
 import type { Battle, Controls, Shell } from "./types";
 import { World, type Obstacle } from "./world";
@@ -34,6 +34,7 @@ export interface HudState {
   score: number;
   enemiesLeft: number;
   // Versus
+  teams: boolean;
   kills: number;
   timeLeft: number;
   killLimit: number;
@@ -172,7 +173,10 @@ export class Game implements Battle {
     this.intermission = 1.2;
   }
 
-  /** Versus semua lawan semua. Host menjalankan simulasi, client hanya menampilkan. */
+  /**
+   * Versus semua lawan semua, atau Merah lawan Biru bila settings.teams.
+   * Host menjalankan simulasi, client hanya menampilkan.
+   */
   startVersus(role: "host" | "client", seed: number, players: VersusPlayer[], settings: VersusSettings, localId: string) {
     this.reset(seed, settings.map);
     this.mode = role;
@@ -181,11 +185,14 @@ export class Game implements Battle {
     this.timeLeft = settings.timeLimit;
     const taken: { x: number; y: number }[] = [];
     players.forEach((p, i) => {
-      // Posisi awal melingkar di arena
+      // Posisi awal melingkar di arena; mode tim: tiap tim di sisi petanya sendiri
       const a = (i / players.length) * Math.PI * 2;
-      const spot = role === "host" ? this.world.findOpenSpot(taken, 450) : { x: this.world.width / 2 + Math.cos(a) * 600, y: this.world.height / 2 + Math.sin(a) * 450 };
+      const side = settings.teams ? p.team : undefined;
+      const spot = role === "host" ? this.world.findOpenSpot(taken, 450, side) : { x: this.world.width / 2 + Math.cos(a) * 600, y: this.world.height / 2 + Math.sin(a) * 450 };
       taken.push(spot);
-      const tank = new Tank(tankById(p.tank), p.id, spot.x, spot.y, undefined, p.id);
+      // Tank satu tim tidak saling melukai (peluru melewati kawan)
+      const team = settings.teams ? `team${p.team}` : p.id;
+      const tank = new Tank(tankById(p.tank), team, spot.x, spot.y, undefined, p.id);
       tank.label = p.name;
       tank.angle = Math.atan2(this.world.height / 2 - spot.y, this.world.width / 2 - spot.x);
       tank.turret = tank.angle;
@@ -195,7 +202,11 @@ export class Game implements Battle {
       if (p.id === localId) this.local = tank;
     });
     if (this.local) this.renderer.chase(this.local.x, this.local.y, this.local.angle, true);
-    this.events.banner("Pertempuran Dimulai!", `Hancurkan ${settings.killLimit} tank untuk menang`);
+    const mine = players.find((p) => p.id === localId);
+    this.events.banner(
+      settings.teams && mine ? `Tim ${TEAMS[mine.team].name}` : "Pertempuran Dimulai!",
+      settings.teams ? `Hancurkan ${settings.killLimit} tank musuh bersama timmu` : `Hancurkan ${settings.killLimit} tank untuk menang`,
+    );
     sound.fanfare();
     crew.say("start");
   }
@@ -277,8 +288,10 @@ export class Game implements Battle {
         this.effects.text(tank.x, tank.y, `-${ev.n}${ev.c ? " KRITIS!" : ""}`, color, ev.c ? 20 : 17);
         if (tank === this.local) {
           this.renderer.shake(9);
-          crew.damaged(tank.hp / tank.maxHp);
-        } else if (ev.a && ev.a === this.local?.id && tank.hp > 0) crew.say("hit");
+          const shooter = ev.a && ev.a !== tank.id ? this.tankById(ev.a) : null;
+          if (shooter) this.renderer.hitFrom(Math.atan2(shooter.y - tank.y, shooter.x - tank.x));
+          crew.damaged(tank.hp / tank.maxHp, ev.c === 1);
+        } else if (ev.a && ev.a === this.local?.id && tank.hp > 0) crew.say(ev.c ? "weakspot" : "hit");
         break;
       }
       case "boom":
@@ -332,6 +345,7 @@ export class Game implements Battle {
     requestAnimationFrame(this.frame);
     const dt = Math.min(0.05, (time - this.last) / 1000 || 0);
     this.last = time;
+    this.updateEngineSound();
     if (this.mode === "idle") return;
     // Mode versus tidak bisa dijeda (pemain lain tetap bermain)
     if (!this.paused || this.isVersus) {
@@ -340,6 +354,15 @@ export class Game implements Battle {
     }
     this.renderer.render(dt, this);
   };
+
+  /** Suara mesin hanya untuk tank pemain yang masih hidup dan sedang bertempur */
+  private updateEngineSound() {
+    const t = this.local;
+    const running = t && t.alive && (this.mode === "solo" || this.isVersus) && (!this.paused || this.isVersus) && !this.matchOver;
+    if (!running) return sound.engine(null);
+    const move = this.input.move;
+    sound.engine({ load: Math.min(1, Math.hypot(move.x, move.y)), speed: Math.min(1, Math.abs(t.speed) / t.model.speed) });
+  }
 
   private playerControls(player: Tank): Controls {
     // Input mengikuti arah kamera: "atas" di layar = arah pandang kamera (depan tank)
@@ -522,16 +545,19 @@ export class Game implements Battle {
     this.hudTimer = 0.1;
     const p = this.local;
     const mine = this.scores.get(p.id);
+    // Tank yang menyamar menampilkan HP dalam skala tank yang ditirunya (persentasenya tetap jujur)
+    const shownMax = p.model.disguise ? shownModel(p.model).hp : p.maxHp;
     this.events.hud({
       versus: this.isVersus,
-      hp: Math.max(0, p.hp),
-      maxHp: p.maxHp,
+      hp: (Math.max(0, p.hp) / p.maxHp) * shownMax,
+      maxHp: shownMax,
       reload: this.mode === "client" ? 1 : p.reloadProgress,
       rapidFire: p.rapidFire,
       alive: p.alive,
       wave: this.wave,
       score: this.score,
       enemiesLeft: this.tanks.filter((t) => t.alive && t.team === "enemy").length,
+      teams: !!this.settings.teams,
       kills: mine?.kills ?? 0,
       timeLeft: this.timeLeft,
       killLimit: this.settings.killLimit,
@@ -544,7 +570,7 @@ export class Game implements Battle {
     return this.players
       .map((p) => {
         const s = this.scores.get(p.id) ?? { kills: 0, deaths: 0 };
-        return { id: p.id, name: p.name, tank: p.tank, kills: s.kills, deaths: s.deaths, local: p.id === this.local?.id };
+        return { id: p.id, name: p.name, tank: p.tank, team: p.team, kills: s.kills, deaths: s.deaths, local: p.id === this.local?.id };
       })
       .sort((a, b) => b.kills - a.kills || a.deaths - b.deaths);
   }
@@ -677,10 +703,12 @@ export class Game implements Battle {
     if (this.isVersus) {
       const victim = this.scores.get(t.id);
       if (victim) victim.deaths++;
-      if (killer && killer !== t) {
+      // Menghancurkan diri sendiri atau kawan setim (mis. lewat tong meledak) tidak dihitung
+      if (killer && killer.team !== t.team) {
         const score = this.scores.get(killer.id);
         if (score) score.kills++;
-        if (score && score.kills >= this.settings.killLimit) this.endMatch();
+        const total = this.settings.teams ? Math.max(...teamTotals(this.scoreRows())) : (score?.kills ?? 0);
+        if (total >= this.settings.killLimit) this.endMatch();
       }
       this.respawnTimers.set(t.id, RESPAWN_TIME);
       return;
@@ -817,7 +845,8 @@ export class Game implements Battle {
         const tank = this.tankById(id);
         if (!tank) continue;
         const others = this.tanks.filter((t) => t !== tank && t.alive);
-        const spot = this.world.findOpenSpot(others, 550);
+        const side = this.settings.teams ? this.players.find((p) => p.id === id)?.team : undefined;
+        const spot = this.world.findOpenSpot(others, 550, side);
         tank.respawn(spot.x, spot.y, Math.atan2(this.world.height / 2 - spot.y, this.world.width / 2 - spot.x));
         if (tank === this.local) crew.respawned();
       }

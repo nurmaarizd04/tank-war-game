@@ -60,6 +60,8 @@ export interface TankModel {
    * "gold"/"silver" berlapis logam mengilap; "hidden" menyamar persis seperti tank biasa.
    */
   secret?: "gold" | "silver" | "hidden";
+  /** Tank rahasia "hidden": id tank yang ditiru, statistiknya yang ditampilkan di garasi & HUD */
+  disguise?: string;
 }
 
 /** Dipakai bersama oleh Pindad Harimau dan tank rahasia yang menyamar sebagai Harimau */
@@ -897,6 +899,7 @@ export const TANKS: TankModel[] = [
     shellSpeed: 1250,
     range: 800,
     secret: "hidden",
+    disguise: "harimau",
     look: HARIMAU_LOOK,
   },
 ];
@@ -905,6 +908,9 @@ export const TANKS: TankModel[] = [
 export const STANDARD_TANKS = TANKS.filter((t) => !t.secret);
 
 export const tankById = (id: string) => TANKS.find((t) => t.id === id) ?? TANKS[0];
+
+/** Model yang statistiknya ditampilkan: tank rahasia "hidden" memperlihatkan angka tank yang ditirunya */
+export const shownModel = (t: TankModel) => (t.disguise ? tankById(t.disguise) : t);
 
 /** Hash FNV-1a: kode rahasia tidak ditulis apa adanya di kode sumber */
 function hashCode(text: string) {

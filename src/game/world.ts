@@ -226,11 +226,18 @@ export class World {
     return hit;
   }
 
-  /** Titik acak yang bebas obstacle dan jauh dari titik-titik tertentu */
-  findOpenSpot(avoid: { x: number; y: number }[], minDistance: number) {
+  /**
+   * Titik acak yang bebas obstacle dan jauh dari titik-titik tertentu.
+   * side 0/1 = hanya di sepertiga kiri/kanan peta (markas tim).
+   */
+  findOpenSpot(avoid: { x: number; y: number }[], minDistance: number, side?: 0 | 1) {
     for (let i = 0; i < 300; i++) {
       const edge = Math.random() < 0.6;
-      const x = edge ? (Math.random() < 0.5 ? 90 + Math.random() * 260 : this.width - 350 + Math.random() * 260) : 90 + Math.random() * (this.width - 180);
+      let x = edge ? (Math.random() < 0.5 ? 90 + Math.random() * 260 : this.width - 350 + Math.random() * 260) : 90 + Math.random() * (this.width - 180);
+      if (side !== undefined) {
+        const offset = 90 + Math.random() * (this.width * 0.3 - 90);
+        x = side === 0 ? offset : this.width - offset;
+      }
       const y = 90 + Math.random() * (this.height - 180);
       const distance = i < 200 ? minDistance : minDistance * 0.4;
       if (avoid.some((p) => Math.hypot(x - p.x, y - p.y) < distance)) continue;

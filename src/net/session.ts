@@ -1,6 +1,6 @@
 import Peer, { type DataConnection } from "peerjs";
 import type { Controls } from "../game/types";
-import type { Snapshot, VersusPlayer, VersusSettings } from "../game/protocol";
+import type { Snapshot, TeamId, VersusPlayer, VersusSettings } from "../game/protocol";
 
 /**
  * Multiplayer lewat internet tanpa server sendiri (WebRTC peer-to-peer via PeerJS).
@@ -9,7 +9,8 @@ import type { Snapshot, VersusPlayer, VersusSettings } from "../game/protocol";
  */
 
 export const MAX_PLAYERS = 10;
-const PREFIX = "tankstrike-v1-";
+// v2: tank baru, model 3D baru & mode tim (tidak kompatibel dengan versi sebelumnya)
+const PREFIX = "tankstrike-v2-";
 const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const PEER_OPTIONS = {
   config: {
@@ -24,6 +25,7 @@ export interface LobbyPlayer extends VersusPlayer {
 type ClientMessage =
   | { t: "join"; name: string; tank: string }
   | { t: "tank"; tank: string }
+  | { t: "team"; team: TeamId }
   | { t: "input"; mx: number; my: number; aim: number | null; fire: boolean };
 
 type HostMessage =
@@ -63,7 +65,7 @@ export class HostSession {
   readonly code: string;
   readonly localId = "host";
   players: LobbyPlayer[];
-  settings: VersusSettings = { killLimit: 10, timeLimit: 300, map: "padang" };
+  settings: VersusSettings = { killLimit: 10, timeLimit: 300, map: "padang", teams: false };
   inMatch = false;
   onLobby: (players: LobbyPlayer[]) => void = () => {};
   onInput: (id: string, ctrl: Controls) => void = () => {};
@@ -75,7 +77,7 @@ export class HostSession {
   private constructor(peer: Peer, code: string, name: string, tank: string) {
     this.peer = peer;
     this.code = code;
-    this.players = [{ id: this.localId, name, tank, host: true }];
+    this.players = [{ id: this.localId, name, tank, team: 0, host: true }];
     peer.on("connection", (conn) => this.accept(conn));
     peer.on("disconnected", () => peer.reconnect());
     peer.on("error", (err) => {
@@ -113,13 +115,19 @@ export class HostSession {
         if (this.players.length >= MAX_PLAYERS) return this.refuse(conn, `Room penuh (maksimal ${MAX_PLAYERS} pemain).`);
         const id = conn.peer;
         this.conns.set(id, conn);
-        this.players.push({ id, name: msg.name.slice(0, 14) || "Pemain", tank: msg.tank, host: false });
+        this.players.push({ id, name: msg.name.slice(0, 14) || "Pemain", tank: msg.tank, team: this.smallerTeam(), host: false });
         this.send(conn, { t: "welcome", id });
         this.broadcastLobby();
       } else if (msg.t === "tank") {
         const p = this.players.find((pl) => pl.id === conn.peer);
         if (p && !this.inMatch) {
           p.tank = msg.tank;
+          this.broadcastLobby();
+        }
+      } else if (msg.t === "team") {
+        const p = this.players.find((pl) => pl.id === conn.peer);
+        if (p && !this.inMatch && (msg.team === 0 || msg.team === 1)) {
+          p.team = msg.team;
           this.broadcastLobby();
         }
       } else if (msg.t === "input") {
@@ -160,6 +168,17 @@ export class HostSession {
     this.broadcastLobby();
   }
 
+  setLocalTeam(team: TeamId) {
+    this.players[0].team = team;
+    this.broadcastLobby();
+  }
+
+  /** Pemain baru masuk ke tim yang anggotanya lebih sedikit */
+  private smallerTeam(): TeamId {
+    const red = this.players.filter((p) => p.team === 0).length;
+    return red > this.players.length - red ? 1 : 0;
+  }
+
   setSettings(settings: VersusSettings) {
     this.settings = settings;
     this.broadcastLobby();
@@ -167,7 +186,7 @@ export class HostSession {
 
   start(seed: number) {
     this.inMatch = true;
-    const players = this.players.map(({ id, name, tank }) => ({ id, name, tank }));
+    const players = this.players.map(({ id, name, tank, team }) => ({ id, name, tank, team }));
     this.broadcast({ t: "start", seed, players, settings: this.settings });
     return players;
   }
@@ -193,7 +212,7 @@ export class ClientSession {
   readonly code: string;
   localId = "";
   players: LobbyPlayer[] = [];
-  settings: VersusSettings = { killLimit: 10, timeLimit: 300, map: "padang" };
+  settings: VersusSettings = { killLimit: 10, timeLimit: 300, map: "padang", teams: false };
   onLobby: (players: LobbyPlayer[], settings: VersusSettings) => void = () => {};
   onStart: (seed: number, players: VersusPlayer[], settings: VersusSettings) => void = () => {};
   onSnapshot: (s: Snapshot) => void = () => {};
@@ -265,6 +284,10 @@ export class ClientSession {
 
   setTank(tank: string) {
     this.send({ t: "tank", tank });
+  }
+
+  setTeam(team: TeamId) {
+    this.send({ t: "team", team });
   }
 
   sendInput(ctrl: Controls) {

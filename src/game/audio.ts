@@ -1,3 +1,14 @@
+/** Node suara mesin tank yang diatur terus-menerus mengikuti kecepatan */
+interface EngineNodes {
+  out: GainNode;
+  low: OscillatorNode;
+  growl: OscillatorNode;
+  filter: BiquadFilterNode;
+  chug: OscillatorNode;
+  clank: GainNode;
+  clankRate: OscillatorNode;
+}
+
 /** Efek suara & musik yang disintesis langsung lewat Web Audio (tanpa file audio). */
 export class Sound {
   ctx: AudioContext | null = null;
@@ -8,6 +19,8 @@ export class Sound {
   sfxOn = true;
   musicOn = true;
   private unlockListeners: (() => void)[] = [];
+  private engineNodes: EngineNodes | null = null;
+  private engineUpdated = 0;
 
   constructor() {
     try {
@@ -130,6 +143,98 @@ export class Sound {
 
   click() {
     this.tone(900, 600, 0.06, 0.15, "triangle");
+  }
+
+  /** Rangkaian suara mesin yang terus berjalan; volumenya 0 sampai engine() dipanggil */
+  private createEngine(ctx: AudioContext, bus: GainNode, noise: AudioBuffer): EngineNodes {
+    const out = ctx.createGain();
+    out.gain.value = 0;
+    out.connect(bus);
+
+    // Deru diesel: gergaji rendah + kotak satu oktaf di atasnya, diredam filter lowpass
+    const mix = ctx.createGain();
+    const low = ctx.createOscillator();
+    low.type = "sawtooth";
+    low.connect(mix);
+    const growl = ctx.createOscillator();
+    growl.type = "square";
+    const growlGain = ctx.createGain();
+    growlGain.gain.value = 0.22;
+    growl.connect(growlGain).connect(mix);
+    // Sedikit derau berat agar tidak terdengar seperti synthesizer murni
+    const body = ctx.createBufferSource();
+    body.buffer = noise;
+    body.loop = true;
+    const bodyFilter = ctx.createBiquadFilter();
+    bodyFilter.type = "lowpass";
+    bodyFilter.frequency.value = 160;
+    const bodyGain = ctx.createGain();
+    bodyGain.gain.value = 0.9;
+    body.connect(bodyFilter).connect(bodyGain).connect(mix);
+
+    const filter = ctx.createBiquadFilter();
+    filter.type = "lowpass";
+    filter.Q.value = 1.6;
+    // Denyut pembakaran silinder: volume berdenyut mengikuti putaran mesin
+    const pulse = ctx.createGain();
+    pulse.gain.value = 0.7;
+    const chug = ctx.createOscillator();
+    const chugDepth = ctx.createGain();
+    chugDepth.gain.value = 0.3;
+    chug.connect(chugDepth).connect(pulse.gain);
+    mix.connect(filter).connect(pulse).connect(out);
+
+    // Gemerincing rantai: derau bernada tinggi yang terputus-putus sesuai kecepatan
+    const links = ctx.createBufferSource();
+    links.buffer = noise;
+    links.loop = true;
+    const linkFilter = ctx.createBiquadFilter();
+    linkFilter.type = "bandpass";
+    linkFilter.frequency.value = 1700;
+    linkFilter.Q.value = 1.3;
+    const linkAmp = ctx.createGain();
+    linkAmp.gain.value = 0.5;
+    const clankRate = ctx.createOscillator();
+    clankRate.type = "square";
+    const clankDepth = ctx.createGain();
+    clankDepth.gain.value = 0.5;
+    clankRate.connect(clankDepth).connect(linkAmp.gain);
+    const clank = ctx.createGain();
+    clank.gain.value = 0;
+    links.connect(linkFilter).connect(linkAmp).connect(clank).connect(out);
+
+    for (const src of [low, growl, chug, clankRate, body, links]) src.start();
+    return { out, low, growl, filter, chug, clank, clankRate };
+  }
+
+  /**
+   * Suara mesin tank pemain. load = tekanan gas 0–1, speed = kecepatan relatif 0–1.
+   * null = mesin diam (menu, jeda, tank hancur).
+   */
+  engine(state: { load: number; speed: number } | null) {
+    const { ctx, sfxBus, noise } = this;
+    if (!ctx || !sfxBus || !noise) return;
+    if (!state) {
+      if (this.engineNodes && this.engineUpdated !== -1) {
+        this.engineNodes.out.gain.setTargetAtTime(0, ctx.currentTime, 0.12);
+        this.engineUpdated = -1;
+      }
+      return;
+    }
+    // Cukup diperbarui ±20× per detik; perubahan dihaluskan oleh setTargetAtTime
+    const now = ctx.currentTime;
+    if (this.engineUpdated > 0 && now - this.engineUpdated < 0.05) return;
+    this.engineUpdated = now;
+    const e = (this.engineNodes ??= this.createEngine(ctx, sfxBus, noise));
+    const rpm = 0.2 + 0.8 * Math.max(state.speed, state.load * 0.6);
+    const base = 30 + rpm * 36;
+    e.out.gain.setTargetAtTime(0.12 + rpm * 0.14, now, 0.15);
+    e.low.frequency.setTargetAtTime(base, now, 0.12);
+    e.growl.frequency.setTargetAtTime(base * 2.02, now, 0.12);
+    e.filter.frequency.setTargetAtTime(170 + rpm * 560, now, 0.12);
+    e.chug.frequency.setTargetAtTime(7 + rpm * 15, now, 0.12);
+    e.clank.gain.setTargetAtTime(state.speed * 1.3, now, 0.1);
+    e.clankRate.frequency.setTargetAtTime(3 + state.speed * 15, now, 0.1);
   }
 
   /** Klik & desis radio interkom sebelum kru berbicara; `out` = klik lepas tombol sesudahnya */

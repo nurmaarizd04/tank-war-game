@@ -29,10 +29,20 @@ export interface Snapshot {
   over: 0 | 1;
 }
 
+export type TeamId = 0 | 1;
+
+/** Mode tim: dua regu, masing-masing muncul di sisi peta yang berbeda */
+export const TEAMS = [
+  { name: "Merah", color: "#ff6b5e" },
+  { name: "Biru", color: "#4da3ff" },
+] as const;
+
 export interface VersusPlayer {
   id: string;
   name: string;
   tank: string;
+  /** Regu pemain (dipakai bila mode tim aktif) */
+  team: TeamId;
 }
 
 export interface VersusSettings {
@@ -41,16 +51,25 @@ export interface VersusSettings {
   timeLimit: number;
   /** Id peta (lihat data/maps.ts); kosong = Padang Rumput */
   map?: string;
+  /** true = Merah lawan Biru, target hancurkan dihitung per tim; false = semua lawan semua */
+  teams?: boolean;
 }
 
 export interface ScoreRow {
   id: string;
   name: string;
   tank: string;
+  team: TeamId;
   kills: number;
   deaths: number;
   local: boolean;
 }
+
+/** Jumlah tank yang dihancurkan tiap tim [Merah, Biru] */
+export const teamTotals = (rows: ScoreRow[]): [number, number] => [
+  rows.filter((r) => r.team === 0).reduce((s, r) => s + r.kills, 0),
+  rows.filter((r) => r.team === 1).reduce((s, r) => s + r.kills, 0),
+];
 
 const r1 = (n: number) => Math.round(n * 10) / 10;
 const r2 = (n: number) => Math.round(n * 100) / 100;

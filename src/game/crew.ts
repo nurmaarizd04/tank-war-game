@@ -6,7 +6,20 @@ import { pick } from "./math";
  * suara bawaan browser (Web Speech API), diapit klik radio. Tanpa file audio.
  */
 
-export type CrewLine = "start" | "wave" | "reload" | "hit" | "kill" | "damaged" | "critical" | "repair" | "rapid" | "dead" | "respawn";
+export type CrewLine =
+  | "start"
+  | "wave"
+  | "reload"
+  | "hit"
+  | "weakspot"
+  | "kill"
+  | "damaged"
+  | "rear"
+  | "critical"
+  | "repair"
+  | "rapid"
+  | "dead"
+  | "respawn";
 
 interface LineDef {
   text: string[];
@@ -21,8 +34,10 @@ const LINES: Record<CrewLine, LineDef> = {
   wave: { text: ["Contact front!", "Enemy armor, twelve o'clock!", "Here they come!", "Heads up, more tanks inbound."], priority: 2, cooldown: 5 },
   reload: { text: ["Up!", "Loaded!", "Gun's up!", "Ready, fire!"], priority: 1, cooldown: 9 },
   hit: { text: ["Hit!", "Good hit!", "That's a hit."], priority: 1, cooldown: 4 },
+  weakspot: { text: ["Right in the engine!", "Rear armor, nice!", "Got him from behind!"], priority: 2, cooldown: 4 },
   kill: { text: ["Target destroyed!", "Got him!", "Scratch one!", "He's down!", "Target, cease fire."], priority: 3, cooldown: 1.5 },
   damaged: { text: ["We're hit!", "Taking fire!", "Ah, that one hurt."], priority: 2, cooldown: 5 },
+  rear: { text: ["Contact rear!", "They're behind us!", "Hit from behind, turn around!"], priority: 3, cooldown: 5 },
   critical: { text: ["We're hurt bad, back up!", "Armor's failing, get us out of here!"], priority: 4, cooldown: 8 },
   repair: { text: ["Repairs done.", "Okay, armor's patched up."], priority: 2, cooldown: 2 },
   rapid: { text: ["Fast reload, keep firing!", "Keep 'em coming!"], priority: 2, cooldown: 2 },
@@ -139,12 +154,13 @@ class Crew {
 
   // ---------------- Kejadian dari pertempuran ----------------
 
-  damaged(hpRatio: number) {
+  /** fromRear = terkena di armor belakang (paling tipis) */
+  damaged(hpRatio: number, fromRear = false) {
     if (hpRatio <= 0) return;
     if (hpRatio < 0.3 && !this.critical) {
       this.critical = true;
       this.say("critical");
-    } else this.say("damaged");
+    } else this.say(fromRear ? "rear" : "damaged");
   }
 
   healed(hpRatio: number) {

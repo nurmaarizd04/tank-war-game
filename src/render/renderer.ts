@@ -3,6 +3,7 @@ import { tankById } from "../data/tanks";
 import type { Particle } from "../game/effects";
 import type { Game } from "../game/game";
 import { angleDiff, clamp, lerp, smoothing } from "../game/math";
+import { TEAMS } from "../game/protocol";
 import type { Tank } from "../game/tank";
 import type { Obstacle, World } from "../game/world";
 import { applyEnvironment, buildTank, createTankEnvironment, disposeTankRig, setWrecked, textures, TRACK_H, type TankRig } from "./models";
@@ -23,6 +24,13 @@ const SUN_X = new THREE.Vector3(0, 1, 0).cross(SUN_Z).normalize();
 const SUN_Y = SUN_Z.clone().cross(SUN_X);
 /** Tingkat resolusi adegan 3D (kelipatan pixel ratio bawaan) yang dipakai bila perangkat lambat */
 const QUALITY_LEVELS = [1, 0.85, 0.7, 0.55];
+/** Lama penanda arah tembakan tampil (detik) */
+const HIT_MARK_TIME = 1.6;
+
+/** Warna regu untuk mode tim ("team0" = Merah, "team1" = Biru); null di luar mode tim */
+function teamColor(t: Tank) {
+  return t.team === "team0" ? TEAMS[0].color : t.team === "team1" ? TEAMS[1].color : null;
+}
 
 // ---------------- Partikel (satu draw call per lapisan) ----------------
 
@@ -147,6 +155,8 @@ export class Renderer {
   private qualityLocked = false;
   private perf = { time: 0, frames: 0, warmup: 3, stepFrom: 0, fastWindows: 0 };
   private time = 0;
+  /** Arah datangnya tembakan yang mengenai tank pemain (sudut dunia) & waktu kena */
+  private hitMarks: { angle: number; at: number }[] = [];
   private readonly tmp = new THREE.Object3D();
   private readonly vec = new THREE.Vector3();
   private readonly raycaster = new THREE.Raycaster();
@@ -340,6 +350,12 @@ export class Renderer {
   }
 
   /** Ubah arah di layar (x kanan, y bawah) menjadi arah di dunia sesuai putaran kamera */
+  /** Tandai arah penembak (sudut dunia dari tank pemain) agar tampil sebagai busur merah di layar */
+  hitFrom(angle: number) {
+    this.hitMarks = this.hitMarks.filter((m) => this.time - m.at < HIT_MARK_TIME);
+    this.hitMarks.push({ angle, at: this.time });
+  }
+
   viewToWorld(x: number, y: number) {
     const fx = Math.cos(this.yaw);
     const fy = Math.sin(this.yaw);
@@ -836,7 +852,8 @@ export class Renderer {
       const ratio = clamp(t.hp / t.maxHp, 0, 1);
       ctx.fillStyle = "rgba(0,0,0,0.6)";
       ctx.fillRect(p.x - w / 2 - 1, p.y - 1, w + 2, 7);
-      ctx.fillStyle = t === local ? "#46d36b" : ratio < 0.35 ? "#ff9f43" : "#ef4b4b";
+      const team = teamColor(t);
+      ctx.fillStyle = t === local ? "#46d36b" : (team ?? (ratio < 0.35 ? "#ff9f43" : "#ef4b4b"));
       ctx.fillRect(p.x - w / 2, p.y, w * ratio, 5);
       if (t === local && game.mode !== "client" && t.reloadProgress < 1) {
         ctx.fillStyle = "rgba(255,210,120,0.9)";
@@ -847,7 +864,7 @@ export class Renderer {
         ctx.lineWidth = 3;
         ctx.strokeStyle = "rgba(0,0,0,0.75)";
         ctx.strokeText(t.label, p.x, p.y - 3);
-        ctx.fillStyle = t === local ? "#9dffb4" : "#ffffff";
+        ctx.fillStyle = t === local ? "#9dffb4" : (team ?? "#ffffff");
         ctx.fillText(t.label, p.x, p.y - 3);
       }
     }
@@ -868,6 +885,7 @@ export class Renderer {
     ctx.globalAlpha = 1;
 
     this.drawIndicators(ctx, game);
+    this.drawHitMarks(ctx, game);
     this.drawMinimap(ctx, game);
     this.drawSticks(ctx, game);
   }
@@ -894,7 +912,7 @@ export class Renderer {
       ctx.save();
       ctx.translate(cx + Math.cos(a) * k, cy + Math.sin(a) * k);
       ctx.rotate(a);
-      ctx.fillStyle = "rgba(239,75,75,0.92)";
+      ctx.fillStyle = teamColor(t) ?? "rgba(239,75,75,0.92)";
       ctx.strokeStyle = "rgba(0,0,0,0.5)";
       ctx.lineWidth = 2;
       ctx.beginPath();
@@ -905,6 +923,47 @@ export class Renderer {
       ctx.closePath();
       ctx.fill();
       ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  /** Busur merah di sekeliling tengah layar yang menunjuk arah datangnya tembakan */
+  private drawHitMarks(ctx: CanvasRenderingContext2D, game: Game) {
+    this.hitMarks = this.hitMarks.filter((m) => this.time - m.at < HIT_MARK_TIME);
+    if (!this.hitMarks.length || !game.local?.alive) return;
+    const cx = this.cssW / 2;
+    const cy = this.cssH / 2;
+    const radius = Math.min(this.cssW, this.cssH) * 0.37;
+    const fx = Math.cos(this.yaw);
+    const fy = Math.sin(this.yaw);
+    for (const m of this.hitMarks) {
+      // Arah dunia → layar: kanan layar = (−fy, fx), atas layar = arah pandang (fx, fy)
+      const dx = Math.cos(m.angle);
+      const dy = Math.sin(m.angle);
+      const a = Math.atan2(-(dx * fx + dy * fy), -dx * fy + dy * fx);
+      const fade = 1 - (this.time - m.at) / HIT_MARK_TIME;
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(a);
+      ctx.globalAlpha = fade;
+      const glow = ctx.createRadialGradient(0, 0, radius - 14, 0, 0, radius + 14);
+      glow.addColorStop(0, "rgba(255,40,40,0)");
+      glow.addColorStop(0.5, "rgba(255,50,40,0.85)");
+      glow.addColorStop(1, "rgba(255,40,40,0)");
+      ctx.strokeStyle = glow;
+      ctx.lineWidth = 22;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.arc(0, 0, radius, -0.38, 0.38);
+      ctx.stroke();
+      // Ujung panah kecil di tengah busur
+      ctx.fillStyle = "rgba(255,70,60,0.95)";
+      ctx.beginPath();
+      ctx.moveTo(radius + 16, 0);
+      ctx.lineTo(radius + 4, -8);
+      ctx.lineTo(radius + 4, 8);
+      ctx.closePath();
+      ctx.fill();
       ctx.restore();
     }
   }
@@ -957,7 +1016,7 @@ export class Renderer {
     }
     for (const t of game.tanks) {
       if (!t.alive) continue;
-      ctx.fillStyle = t === game.local ? "#46d36b" : "#ef4b4b";
+      ctx.fillStyle = t === game.local ? "#46d36b" : (teamColor(t) ?? "#ef4b4b");
       ctx.beginPath();
       if (t === game.local) {
         // Panah arah hadap tank pemain
