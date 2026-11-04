@@ -103,8 +103,8 @@ export class Game implements Battle {
   private remoteInputs = new Map<string, Controls>();
   private timeLeft = 0;
   private matchOver = false;
-  /** Client: posisi target dari snapshot untuk dihaluskan */
-  private targets = new Map<string, { x: number; y: number; angle: number; turret: number }>();
+  /** Client: posisi target dari snapshot untuk dihaluskan; age = detik sejak snapshot (untuk perkiraan gerak) */
+  private targets = new Map<string, { x: number; y: number; angle: number; turret: number; speed: number; age: number }>();
 
   constructor(canvas: HTMLCanvasElement, overlay: HTMLCanvasElement, events: GameEvents) {
     this.events = events;
@@ -416,6 +416,13 @@ export class Game implements Battle {
     for (const tank of this.tanks) {
       const target = this.targets.get(tank.id);
       if (target) {
+        // Perkirakan gerak di antara snapshot (20×/detik) agar tank melaju mulus, bukan maju-berhenti.
+        // Dibatasi 0,2 detik supaya tidak kebablasan bila paket terlambat.
+        if (target.age < 0.2 && tank.alive) {
+          target.x += Math.cos(target.angle) * target.speed * dt;
+          target.y += Math.sin(target.angle) * target.speed * dt;
+        }
+        target.age += dt;
         const beforeX = tank.x;
         const beforeY = tank.y;
         tank.x += (target.x - tank.x) * k;
@@ -470,7 +477,7 @@ export class Game implements Battle {
         tank.angle = angle;
         tank.turret = turret;
       }
-      this.targets.set(id, { x, y, angle, turret });
+      this.targets.set(id, { x, y, angle, turret, speed, age: 0 });
       tank.hp = hp;
       if (respawned) {
         tank.deadTime = 0;

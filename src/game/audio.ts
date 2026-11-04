@@ -132,8 +132,13 @@ export class Sound {
     this.tone(900, 600, 0.06, 0.15, "triangle");
   }
 
-  /** Klik & desis radio interkom sebelum kru berbicara */
-  radio() {
+  /** Klik & desis radio interkom sebelum kru berbicara; `out` = klik lepas tombol sesudahnya */
+  radio(out = false) {
+    if (out) {
+      this.noiseBurst(0.16, 2400, 900, 0.12, "bandpass");
+      this.tone(900, 700, 0.04, 0.04, "square");
+      return;
+    }
     this.noiseBurst(0.09, 3000, 1600, 0.16, "bandpass");
     this.tone(1250, 1250, 0.045, 0.05, "square");
   }

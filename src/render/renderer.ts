@@ -15,6 +15,14 @@ const TILT = (55 * Math.PI) / 180;
 const CHASE = { fov: 58, back: 200, height: 105, ahead: 170, lookHeight: 18 };
 /** Saat gedung menghalangi: kamera naik & mendekat (lebih menunduk) */
 const CHASE_LIFTED = { back: 110, height: 250 };
+/** Matahari selalu di posisi relatif yang sama terhadap pusat bayangan */
+const SUN_OFFSET = new THREE.Vector3(-380, 700, 260);
+// Sumbu x/y kamera bayangan (tegak lurus arah cahaya), untuk mengunci pusat bayangan ke grid texel
+const SUN_Z = SUN_OFFSET.clone().normalize();
+const SUN_X = new THREE.Vector3(0, 1, 0).cross(SUN_Z).normalize();
+const SUN_Y = SUN_Z.clone().cross(SUN_X);
+/** Tingkat resolusi adegan 3D (kelipatan pixel ratio bawaan) yang dipakai bila perangkat lambat */
+const QUALITY_LEVELS = [1, 0.85, 0.7, 0.55];
 
 // ---------------- Partikel (satu draw call per lapisan) ----------------
 
@@ -127,7 +135,17 @@ export class Renderer {
   private shakeAmount = 0;
   private cssW = 0;
   private cssH = 0;
+  /** Pixel ratio adegan 3D (bisa diturunkan otomatis) & lapisan 2D (tetap tajam) */
   private dpr = 1;
+  private uiDpr = 1;
+  /**
+   * Resolusi adaptif: indeks ke QUALITY_LEVELS (0 = penuh). topLevel = tingkat tertinggi yang boleh
+   * dipakai lagi (tingkat yang pernah terbukti lambat tidak dicoba ulang).
+   */
+  private level = 0;
+  private topLevel = 0;
+  private qualityLocked = false;
+  private perf = { time: 0, frames: 0, warmup: 3, stepFrom: 0, fastWindows: 0 };
   private time = 0;
   private readonly tmp = new THREE.Object3D();
   private readonly vec = new THREE.Vector3();
@@ -217,16 +235,63 @@ export class Renderer {
   }
 
   private resize() {
-    this.dpr = Math.min(window.devicePixelRatio || 1, MOBILE ? 1.6 : 2);
+    this.uiDpr = Math.min(window.devicePixelRatio || 1, MOBILE ? 1.6 : 2);
+    this.dpr = this.uiDpr * QUALITY_LEVELS[this.level];
     this.cssW = window.innerWidth;
     this.cssH = window.innerHeight;
     this.gl.setPixelRatio(this.dpr);
     this.gl.setSize(this.cssW, this.cssH, false);
     this.camera.aspect = this.cssW / this.cssH;
     this.camera.updateProjectionMatrix();
-    this.overlay.width = Math.round(this.cssW * this.dpr);
-    this.overlay.height = Math.round(this.cssH * this.dpr);
+    this.overlay.width = Math.round(this.cssW * this.uiDpr);
+    this.overlay.height = Math.round(this.cssH * this.uiDpr);
     this.updateParticleScale();
+  }
+
+  /**
+   * Bila rata-rata frame lebih lambat dari ~45 fps, turunkan resolusi adegan 3D sedikit demi sedikit;
+   * naikkan lagi bila lama lancar. Jika menurunkan resolusi tidak membuatnya lebih cepat (misal browser
+   * dibatasi 30 fps oleh mode hemat baterai), resolusi dikembalikan dan tidak diturunkan lagi.
+   */
+  private adaptQuality(dt: number) {
+    const p = this.perf;
+    if (p.warmup > 0) {
+      p.warmup -= dt;
+      return;
+    }
+    p.time += dt;
+    p.frames++;
+    if (p.time < 1.5) return;
+    const avg = p.time / p.frames;
+    p.time = 0;
+    p.frames = 0;
+    const setLevel = (level: number) => {
+      this.level = level;
+      this.resize();
+      p.warmup = 0.5;
+    };
+    if (p.stepFrom) {
+      // Baru saja diturunkan: apakah benar jadi lebih cepat?
+      const helped = avg < p.stepFrom * 0.9;
+      p.stepFrom = 0;
+      if (!helped) {
+        this.qualityLocked = true;
+        this.topLevel = this.level - 1;
+        setLevel(this.level - 1);
+        return;
+      }
+    }
+    if (avg > 1 / 45 && !this.qualityLocked && this.level < QUALITY_LEVELS.length - 1) {
+      this.topLevel = this.level + 1;
+      p.stepFrom = avg;
+      p.fastWindows = 0;
+      setLevel(this.level + 1);
+    } else if (avg < 1 / 57 && this.level > this.topLevel) {
+      if (++p.fastWindows >= 3) {
+        p.fastWindows = 0;
+        setLevel(this.level - 1);
+      }
+    } else p.fastWindows = 0;
   }
 
   private updateParticleScale() {
@@ -238,6 +303,8 @@ export class Renderer {
   /** Ganti FOV & jarak kabut sesuai mode kamera */
   private applyCameraMode() {
     this.camera.fov = this.chaseOn ? CHASE.fov : FOV;
+    // Kamera belakang: objek di balik kabut tidak perlu digambar sama sekali
+    this.camera.far = this.chaseOn ? 2900 : 7000;
     this.camera.updateProjectionMatrix();
     this.updateParticleScale();
     const fog = this.scene.fog as THREE.Fog;
@@ -314,8 +381,22 @@ export class Renderer {
     this.shakeAmount *= Math.exp(-dt * 9);
     this.camera.position.set(fx + sx, Math.sin(TILT) * d, fz + Math.cos(TILT) * d + sz);
     this.camera.lookAt(fx + sx, 0, fz + sz);
-    this.sun.position.set(fx - 380, 700, fz + 260);
-    this.sun.target.position.set(fx, 0, fz);
+    this.placeSun(fx, fz);
+  }
+
+  /**
+   * Pusatkan peta bayangan di titik ini, digeser per kelipatan satu texel agar tepi bayangan
+   * tidak bergetar/berkedip saat kamera terus bergerak.
+   */
+  private placeSun(x: number, z: number) {
+    const cam = this.sun.shadow.camera;
+    const texel = (cam.right - cam.left) / this.sun.shadow.mapSize.x;
+    const c = this.vec.set(x, 0, z);
+    const cx = c.dot(SUN_X);
+    const cy = c.dot(SUN_Y);
+    c.addScaledVector(SUN_X, Math.round(cx / texel) * texel - cx).addScaledVector(SUN_Y, Math.round(cy / texel) * texel - cy);
+    this.sun.target.position.copy(c);
+    this.sun.position.copy(c).add(SUN_OFFSET);
   }
 
   private updateChaseCamera(dt: number) {
@@ -335,10 +416,7 @@ export class Renderer {
     this.camera.position.set(tx - fx * back + sx, height + sy, tz - fy * back);
     this.camera.lookAt(tx + fx * CHASE.ahead + sx, CHASE.lookHeight + sy, tz + fy * CHASE.ahead);
     // Bayangan dipusatkan di depan tank, area yang paling banyak terlihat
-    const ax = tx + fx * 380;
-    const az = tz + fy * 380;
-    this.sun.position.set(ax - 380, 700, az + 260);
-    this.sun.target.position.set(ax, 0, az);
+    this.placeSun(tx + fx * 380, tz + fy * 380);
   }
 
   /** Ada gedung di antara tank dan kamera (bagian garis pandang yang lebih rendah dari atap) */
@@ -397,6 +475,9 @@ export class Renderer {
     this.env = new THREE.Group();
     this.scene.add(this.env);
     this.buildEnvironment(world);
+    // Membangun peta memakan waktu sesaat; jangan dihitung sebagai frame lambat
+    this.perf.warmup = 3;
+    this.perf.time = this.perf.frames = this.perf.stepFrom = 0;
   }
 
   private buildEnvironment(world: World) {
@@ -619,6 +700,7 @@ export class Renderer {
       this.aimLine.visible = true;
     } else this.aimLine.visible = false;
 
+    this.adaptQuality(dt);
     this.updateCamera(dt);
     this.gl.render(this.scene, this.camera);
     this.drawOverlay(game);
@@ -737,7 +819,7 @@ export class Renderer {
 
   private drawOverlay(game: Game) {
     const ctx = this.octx;
-    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    ctx.setTransform(this.uiDpr, 0, 0, this.uiDpr, 0, 0);
     ctx.clearRect(0, 0, this.cssW, this.cssH);
     const battle = game.mode === "solo" || game.isVersus;
     if (!battle) return;

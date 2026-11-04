@@ -2,8 +2,8 @@ import { sound } from "./audio";
 import { pick } from "./math";
 
 /**
- * Suara kru tank lewat interkom: kalimat bahasa Indonesia diucapkan oleh suara bawaan
- * browser (Web Speech API), diawali klik radio. Tanpa file audio.
+ * Suara kru tank lewat interkom: kalimat bahasa Inggris gaya radio militer diucapkan oleh
+ * suara bawaan browser (Web Speech API), diapit klik radio. Tanpa file audio.
  */
 
 export type CrewLine = "start" | "wave" | "reload" | "hit" | "kill" | "damaged" | "critical" | "repair" | "rapid" | "dead" | "respawn";
@@ -17,18 +17,35 @@ interface LineDef {
 }
 
 const LINES: Record<CrewLine, LineDef> = {
-  start: { text: ["Semua kru siap!", "Mesin menyala, ayo maju!", "Kru siap tempur, Komandan!"], priority: 2, cooldown: 3 },
-  wave: { text: ["Musuh terdeteksi!", "Kontak! Musuh mendekat!", "Gelombang musuh datang!"], priority: 2, cooldown: 5 },
-  reload: { text: ["Peluru siap!", "Siap tembak!", "Terisi, tembak!"], priority: 1, cooldown: 9 },
-  hit: { text: ["Kena!", "Tembakan tepat!", "Sasaran kena!"], priority: 1, cooldown: 4 },
-  kill: { text: ["Target hancur!", "Musuh dilumpuhkan!", "Satu lagi tumbang!", "Sasaran musnah!"], priority: 3, cooldown: 1.5 },
-  damaged: { text: ["Kita kena!", "Armor tertembus!", "Kena tembakan!"], priority: 2, cooldown: 5 },
-  critical: { text: ["Kerusakan parah! Mundur!", "Kita rusak berat, Komandan!"], priority: 4, cooldown: 8 },
-  repair: { text: ["Perbaikan selesai!", "Armor diperbaiki!"], priority: 2, cooldown: 2 },
-  rapid: { text: ["Tembak cepat aktif!", "Isi ulang dipercepat!"], priority: 2, cooldown: 2 },
-  dead: { text: ["Tank hancur! Keluar, keluar!", "Kita kehilangan tank!"], priority: 5, cooldown: 2 },
-  respawn: { text: ["Kembali bertempur!", "Tank baru siap!"], priority: 3, cooldown: 2 },
+  start: { text: ["Crew's ready.", "Engine's up, let's roll.", "Driver, move out.", "All set, let's go."], priority: 2, cooldown: 3 },
+  wave: { text: ["Contact front!", "Enemy armor, twelve o'clock!", "Here they come!", "Heads up, more tanks inbound."], priority: 2, cooldown: 5 },
+  reload: { text: ["Up!", "Loaded!", "Gun's up!", "Ready, fire!"], priority: 1, cooldown: 9 },
+  hit: { text: ["Hit!", "Good hit!", "That's a hit."], priority: 1, cooldown: 4 },
+  kill: { text: ["Target destroyed!", "Got him!", "Scratch one!", "He's down!", "Target, cease fire."], priority: 3, cooldown: 1.5 },
+  damaged: { text: ["We're hit!", "Taking fire!", "Ah, that one hurt."], priority: 2, cooldown: 5 },
+  critical: { text: ["We're hurt bad, back up!", "Armor's failing, get us out of here!"], priority: 4, cooldown: 8 },
+  repair: { text: ["Repairs done.", "Okay, armor's patched up."], priority: 2, cooldown: 2 },
+  rapid: { text: ["Fast reload, keep firing!", "Keep 'em coming!"], priority: 2, cooldown: 2 },
+  dead: { text: ["Bail out! Bail out!", "We lost her, get out!"], priority: 5, cooldown: 2 },
+  respawn: { text: ["Back in the fight.", "New tank, ready to roll."], priority: 3, cooldown: 2 },
 };
+
+/** Suara bawaan OS/browser yang terdengar sangat robotik atau berupa efek novelty (macOS) */
+const ROBOTIC = /zira|hazel|susan|albert|bad news|bahh|bells|boing|bubbles|cellos|good news|jester|organ|superstar|trinoids|whisper|wobble|zarvox|fred|ralph|kathy|junior|espeak/i;
+const MALE = /\b(guy|christopher|eric|ryan|roger|steffan|andrew|brian|davis|tony|thomas|william|liam|george|daniel|aaron|alex|tom|oliver|arthur|mark|male)\b/i;
+
+/** Nilai "kealamian" suara: suara neural/online jauh lebih manusiawi daripada suara SAPI lama */
+function voiceScore(v: SpeechSynthesisVoice) {
+  let score = 0;
+  if (/natural|neural|enhanced|premium/i.test(v.name)) score += 100;
+  if (/online/i.test(v.name)) score += 40;
+  if (/google/i.test(v.name)) score += 50;
+  if (!v.localService) score += 15;
+  if (MALE.test(v.name)) score += 25;
+  if (/^en[-_](us|gb)/i.test(v.lang)) score += 5;
+  if (ROBOTIC.test(v.name)) score -= 200;
+  return score;
+}
 
 const STORAGE_KEY = "tank-crew";
 
@@ -36,6 +53,7 @@ class Crew {
   enabled = true;
   private readonly synth: SpeechSynthesis | null = typeof speechSynthesis !== "undefined" ? speechSynthesis : null;
   private voice: SpeechSynthesisVoice | null = null;
+  private current: SpeechSynthesisUtterance | null = null;
   private lastSaid = new Map<CrewLine, number>();
   private speakingPriority = 0;
   private speakingUntil = 0;
@@ -59,10 +77,11 @@ class Crew {
     return !!this.synth;
   }
 
-  /** Pilih suara bahasa Indonesia, utamakan suara pria (Andika/Ardi) agar terdengar seperti kru */
+  /** Pilih suara bahasa Inggris yang paling natural, utamakan suara pria agar terdengar seperti kru */
   private pickVoice() {
-    const voices = this.synth!.getVoices().filter((v) => v.lang.toLowerCase().replace("_", "-").startsWith("id"));
-    this.voice = voices.find((v) => /andika|ardi|male|pria/i.test(v.name)) ?? voices[0] ?? null;
+    const voices = this.synth!.getVoices().filter((v) => v.lang.toLowerCase().startsWith("en"));
+    voices.sort((a, b) => voiceScore(b) - voiceScore(a));
+    this.voice = voices[0] ?? null;
   }
 
   /** Beberapa browser HP hanya mengizinkan suara setelah interaksi pertama; panggil dari klik/tap */
@@ -96,15 +115,24 @@ class Crew {
 
     const text = pick(def.text);
     const u = new SpeechSynthesisUtterance(text);
-    u.lang = "id-ID";
+    u.lang = this.voice?.lang ?? "en-US";
     if (this.voice) u.voice = this.voice;
-    u.rate = 1.15;
-    u.pitch = 0.85;
+    // Pitch dibiarkan asli (menggeser pitch membuat suara terdengar sintetis);
+    // tempo sedikit bervariasi supaya tidak monoton seperti mesin
+    u.rate = 1.02 + Math.random() * 0.1;
+    u.pitch = 1;
     u.volume = 0.95;
-    u.onend = () => (this.speakingUntil = 0);
+    u.onend = () => {
+      // Ucapan yang dipotong kalimat lain / dihentikan tidak boleh mengganggu ucapan berikutnya
+      if (this.current !== u) return;
+      this.current = null;
+      this.speakingUntil = 0;
+      sound.radio(true);
+    };
+    this.current = u;
     this.speakingPriority = def.priority;
     // Perkiraan durasi bila onend tidak terpanggil (terjadi di sebagian browser)
-    this.speakingUntil = now + 700 + text.length * 70;
+    this.speakingUntil = now + 700 + text.length * 65;
     sound.radio();
     this.synth.speak(u);
   }
@@ -139,6 +167,7 @@ class Crew {
     clearTimeout(this.reloadTimer);
     this.critical = false;
     this.speakingUntil = 0;
+    this.current = null;
     this.synth?.cancel();
   }
 }

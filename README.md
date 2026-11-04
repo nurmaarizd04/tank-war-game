@@ -22,7 +22,7 @@ dan **musik latar orisinal** dibuat lewat kode — tanpa file gambar/audio berha
   3 tingkat kesulitan dan gelombang musuh yang makin kuat.
 - **Tank modern detail**: side skirt lapis baja, peluncur granat asap, senapan mesin jarak jauh (RWS),
   periskop, keranjang turret, lampu depan, dan pantulan logam realistis.
-- **Suara kru** berbahasa Indonesia lewat interkom ("Peluru siap!", "Target hancur!", "Kerusakan parah!")
+- **Suara kru** berbahasa Inggris gaya radio tank lewat interkom ("Up!", "Target destroyed!", "Bail out!"), memakai suara browser paling natural yang tersedia
   memakai suara bawaan browser; bisa dimatikan dengan tombol headset.
 - **Musik latar orisinal** (versi menu & pertempuran) + efek suara; masing-masing bisa dimatikan.
 
