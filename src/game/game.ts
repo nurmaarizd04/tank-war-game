@@ -61,6 +61,14 @@ export interface GameEvents {
 const IDLE: Controls = { moveX: 0, moveY: 0, aim: null, fire: false };
 const BEST_KEY = "tank-best-score";
 const RESPAWN_TIME = 3;
+/** Sudut tujuan saat W/S + A/D: badan terus berputar sambil tetap melaju ~80% */
+const KEY_TURN = 0.45;
+
+/** Arah gerak dunia dari keyboard ala tank. A/D saja = putar di tempat (tujuan tegak lurus badan) */
+function keyMove(angle: number, { forward, turn }: { forward: number; turn: number }) {
+  const d = forward === 0 ? angle + turn * (Math.PI / 2) : angle + turn * KEY_TURN + (forward < 0 ? Math.PI : 0);
+  return { x: Math.cos(d), y: Math.sin(d) };
+}
 
 export class Game implements Battle {
   world = new World(1);
@@ -71,6 +79,8 @@ export class Game implements Battle {
   readonly input: Input;
   readonly renderer: Renderer;
   paused = false;
+  /** false = kamera tetap (tidak ikut berputar), true = kamera dari belakang yang ikut arah tank */
+  chaseCamera = false;
   mode: Mode = "idle";
   /** Tank yang dikendalikan pemain di perangkat ini */
   local: Tank | null = null;
@@ -169,7 +179,7 @@ export class Game implements Battle {
     this.local.angle = -Math.PI / 2;
     this.local.turret = this.local.angle;
     this.tanks.push(this.local);
-    this.renderer.chase(this.local.x, this.local.y, this.local.angle, true);
+    this.viewTank(this.local, true);
     this.intermission = 1.2;
   }
 
@@ -201,7 +211,7 @@ export class Game implements Battle {
       this.scores.set(p.id, { kills: 0, deaths: 0 });
       if (p.id === localId) this.local = tank;
     });
-    if (this.local) this.renderer.chase(this.local.x, this.local.y, this.local.angle, true);
+    if (this.local) this.viewTank(this.local, true);
     const mine = players.find((p) => p.id === localId);
     this.events.banner(
       settings.teams && mine ? `Tim ${TEAMS[mine.team].name}` : "Pertempuran Dimulai!",
@@ -365,9 +375,10 @@ export class Game implements Battle {
   }
 
   private playerControls(player: Tank): Controls {
-    // Input mengikuti arah kamera: "atas" di layar = arah pandang kamera (depan tank)
+    // Keyboard: relatif terhadap badan tank. Joystick: mengikuti arah kamera ("atas" di layar = arah pandang)
+    const drive = this.input.keyDrive;
     const raw = this.input.move;
-    const move = this.renderer.viewToWorld(raw.x, raw.y);
+    const move = drive ? keyMove(player.angle, drive) : this.renderer.viewToWorld(raw.x, raw.y);
     let aim: number | null = null;
     let fire = this.input.keyFire;
     const stick = this.input.aimStick;
@@ -529,10 +540,20 @@ export class Game implements Battle {
     }
   }
 
+  setChaseCamera(on: boolean) {
+    this.chaseCamera = on;
+    if (this.local) this.viewTank(this.local);
+  }
+
+  private viewTank(t: Tank, snap = false) {
+    if (this.chaseCamera) this.renderer.chase(t.x, t.y, t.angle, snap);
+    else this.renderer.focus(t.x, t.y, snap, 8);
+  }
+
   private followLocal() {
     const target = this.local ?? null;
     if (target) {
-      this.renderer.chase(target.x, target.y, target.angle);
+      this.viewTank(target);
     } else {
       const alive = this.tanks.filter((t) => t.alive);
       if (alive.length) this.renderer.focus(alive.reduce((s, t) => s + t.x, 0) / alive.length, alive.reduce((s, t) => s + t.y, 0) / alive.length, false, 1.2);

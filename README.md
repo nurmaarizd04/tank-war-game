@@ -20,7 +20,8 @@ dan **musik latar orisinal** dibuat lewat kode — tanpa file gambar/audio berha
   dengan perisai sesaat. Ada papan peringkat, kill feed, dan papan skor akhir.
 - **4 peta**: Padang Rumput, Gurun, Salju, dan Kota — masing-masing dengan warna tanah, langit,
   pohon, dan kepadatan rintangan berbeda. Dipilih di layar latihan, atau oleh host di lobi online.
-- **Kamera dari belakang tank** yang ikut berputar mengikuti arah badan tank, dengan **busur merah
+- **Dua mode kamera** (tombol kamera di pojok kanan atas): **tetap** — tidak ikut berputar, arah
+  joystick/tombol sama dengan arah di layar (bawaan) — atau **ikut tank** dari belakang. Ada **busur merah
   penanda arah tembakan** saat tank kamu terkena.
 - **Suara mesin diesel & gemerincing rantai** yang naik-turun mengikuti kecepatan tank.
 - **Latihan vs komputer**: AI yang mengejar, memutar, menghindari rintangan & membidik dengan prediksi;

@@ -38,6 +38,8 @@ const ICONS = {
   key: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="M10.8 12.2L20 3M16 7l3 3M14 9l2 2"/></svg>`,
   crewOn: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="2.5" y="13" width="4.5" height="7" rx="1.5" fill="currentColor"/><rect x="17" y="13" width="4.5" height="7" rx="1.5" fill="currentColor"/><path d="M19 20c0 1.6-2.2 2.2-5.5 2.2"/></svg>`,
   crewOff: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="2.5" y="13" width="4.5" height="7" rx="1.5" fill="currentColor"/><rect x="17" y="13" width="4.5" height="7" rx="1.5" fill="currentColor"/><path d="M3 3l18 18" stroke-width="2.4"/></svg>`,
+  camFixed: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9V5a2 2 0 0 1 2-2h4M15 3h4a2 2 0 0 1 2 2v4M21 15v4a2 2 0 0 1-2 2h-4M9 21H5a2 2 0 0 1-2-2v-4"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>`,
+  camChase: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 3v5h-5"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>`,
   share: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>`,
 };
 
@@ -48,6 +50,7 @@ const STORAGE = {
   name: "tank-name",
   secret: "tank-secret-unlocked",
   map: "tank-map",
+  camera: "tank-camera",
 };
 const KILL_OPTIONS = [5, 10, 15, 20];
 const TIME_OPTIONS = [180, 300, 480];
@@ -125,6 +128,7 @@ export class App {
     this.tank = tankById(load(STORAGE.tank) ?? "harimau");
     if (this.tank.secret && !this.unlocked.has(this.tank.id)) this.tank = tankById("harimau");
     this.difficulty = DIFFICULTIES.find((d) => d.id === (load(STORAGE.difficulty) as DifficultyId)) ?? DIFFICULTIES[1];
+    game.chaseCamera = load(STORAGE.camera) === "chase";
     root.innerHTML = this.markup();
     this.bind();
     this.renderGarageCards();
@@ -177,6 +181,7 @@ export class App {
           <button class="icon-btn" data-action="toggle-music" aria-label="Musik"></button>
           <button class="icon-btn" data-action="toggle-sfx" aria-label="Efek suara"></button>
           <button class="icon-btn" data-action="toggle-crew" aria-label="Suara kru"></button>
+          <button class="icon-btn" data-action="toggle-camera" aria-label="Kamera"></button>
         </div>
         <button class="menu-tank" data-action="garage" aria-label="Ganti tank">
           <div class="label">Tank kamu</div>
@@ -342,9 +347,10 @@ export class App {
           <section>
             <h4>💻 Di Laptop</h4>
             <ul>
-              <li><b>WASD</b> / panah untuk bergerak.</li>
+              <li><b>W/S</b> maju-mundur, <b>A/D</b> belok (atau tombol panah).</li>
               <li><b>Mouse</b> untuk membidik, <b>klik</b> / <b>Spasi</b> untuk menembak.</li>
               <li><b>Esc</b> untuk menu jeda.</li>
+              <li>Tombol <b>kamera</b> di pojok kanan atas: kamera <b>tetap</b> (tidak ikut berputar) atau <b>ikut tank</b> dari belakang.</li>
             </ul>
           </section>
           <section>
@@ -385,6 +391,7 @@ export class App {
         <button class="icon-btn" data-action="toggle-music" aria-label="Musik"></button>
         <button class="icon-btn" data-action="toggle-sfx" aria-label="Efek suara"></button>
         <button class="icon-btn" data-action="toggle-crew" aria-label="Suara kru"></button>
+        <button class="icon-btn" data-action="toggle-camera" aria-label="Kamera"></button>
         <button class="icon-btn" data-action="pause" aria-label="Menu">${ICONS.pause}</button>
       </div>
       <ul class="killfeed" id="killfeed"></ul>
@@ -590,6 +597,12 @@ export class App {
         if (crew.enabled) crew.say("start");
         this.renderToggles();
         break;
+      case "toggle-camera":
+        this.game.setChaseCamera(!this.game.chaseCamera);
+        save(STORAGE.camera, this.game.chaseCamera ? "chase" : "fixed");
+        this.renderToggles();
+        if (this.inBattle) this.flashHint(this.game.chaseCamera ? "Kamera ikut tank (dari belakang)" : "Kamera tetap — tidak ikut berputar");
+        break;
     }
   }
 
@@ -671,14 +684,24 @@ export class App {
     this.$("#hud-tank").innerHTML = `${flagSvg(this.tank.flag)} ${this.tank.name}`;
     this.$("#killfeed").innerHTML = "";
     this.renderToggles();
-    const hint = this.$("#hud-hint");
-    hint.textContent = matchMedia("(pointer: coarse)").matches
-      ? "Geser kiri untuk bergerak · Geser kanan untuk membidik & menembak"
-      : "WASD untuk bergerak · Mouse untuk membidik · Klik untuk menembak";
-    hint.classList.remove("hide");
-    setTimeout(() => hint.classList.add("hide"), 6000);
+    this.flashHint(
+      matchMedia("(pointer: coarse)").matches
+        ? "Geser kiri untuk bergerak · Geser kanan untuk membidik & menembak"
+        : "WASD untuk bergerak · Mouse untuk membidik · Klik untuk menembak",
+      6000,
+    );
     music.play("battle");
     this.show("none");
+  }
+
+  private hintTimer = 0;
+
+  private flashHint(text: string, ms = 2500) {
+    const hint = this.$("#hud-hint");
+    hint.textContent = text;
+    hint.classList.remove("hide");
+    clearTimeout(this.hintTimer);
+    this.hintTimer = window.setTimeout(() => hint.classList.add("hide"), ms);
   }
 
   private startSolo(difficulty: Difficulty) {
@@ -936,6 +959,10 @@ export class App {
       b.classList.toggle("off", !crew.enabled);
       // Browser tanpa Web Speech: sembunyikan tombolnya
       b.hidden = !crew.supported;
+    }
+    for (const b of this.root.querySelectorAll<HTMLElement>("[data-action=toggle-camera]")) {
+      b.innerHTML = this.game.chaseCamera ? ICONS.camChase : ICONS.camFixed;
+      b.title = this.game.chaseCamera ? "Kamera: ikut tank" : "Kamera: tetap";
     }
   }
 

@@ -138,6 +138,15 @@ export class Input {
     return d ? { x: x / d, y: y / d } : { x: 0, y: 0 };
   }
 
+  /** Keyboard ala tank: maju/mundur searah badan & putar badan (null jika joystick dipakai / tak ada tombol) */
+  get keyDrive(): { forward: number; turn: number } | null {
+    if (this.left.active) return null;
+    const k = this.keys;
+    const forward = Number(k.has("w") || k.has("arrowup")) - Number(k.has("s") || k.has("arrowdown"));
+    const turn = Number(k.has("d") || k.has("arrowright")) - Number(k.has("a") || k.has("arrowleft"));
+    return forward || turn ? { forward, turn } : null;
+  }
+
   /** Arah bidik dari joystick kanan (null jika tidak dipakai) & apakah sedang menembak */
   get aimStick(): { angle: number; firing: boolean } | null {
     if (!this.right.active) return null;

@@ -881,7 +881,8 @@ export const TANKS: TankModel[] = [
   },
   {
     // Menyamar: nama, bendera, deskripsi & model 3D sama persis dengan Pindad Harimau,
-    // jadi pemain lain hanya melihat "Pindad Harimau". Kemampuannya di atas Rajawali X-2.
+    // jadi pemain lain hanya melihat "Pindad Harimau". Tank terkuat: setiap statistiknya
+    // di atas Garuda X-1 maupun Rajawali X-2.
     id: "harimau-k",
     name: "Pindad Harimau",
     country: "Indonesia",
@@ -889,15 +890,15 @@ export const TANKS: TankModel[] = [
     era: "modern",
     year: 2021,
     description: HARIMAU_DESCRIPTION,
-    hp: 340,
-    armor: 0.38,
+    hp: 480,
+    armor: 0.5,
     speed: 175,
     hullTurn: 3.0,
-    turretTurn: 2.8,
-    damage: 140,
-    reload: 1.35,
-    shellSpeed: 1250,
-    range: 800,
+    turretTurn: 3.2,
+    damage: 200,
+    reload: 1.1,
+    shellSpeed: 1450,
+    range: 900,
     secret: "hidden",
     disguise: "harimau",
     look: HARIMAU_LOOK,
